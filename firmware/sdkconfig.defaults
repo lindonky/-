@@ -1,0 +1,32 @@
+# ESP32-S3 三路电调控制工程
+CONFIG_IDF_TARGET="esp32s3"
+# 电调已校准后关闭上电自动校准：避免 2200us 校准脉冲让已武装的电调误判为满油门狂转。
+# 需要重新校准（换电调/换电池）时用网页或串口发送 CAL。
+CONFIG_ESC_CALIBRATE_ON_BOOT=n
+
+# 双向脉宽支持：阻抗模式"抬脚时推进反转"需要向推进发 <1500us 的反转脉宽。
+# 注意：当前电调实测不支持物理反转（只会减速到停），换支持反转的电调后即生效。
+CONFIG_ESC_BIDIRECTIONAL=y
+
+# 三模式输出上限（PWM 幅值）：助力=80% / 主动=100%(基准50%) / 阻抗=60%
+CONFIG_MODE_ASSIST_MAX=800
+CONFIG_MODE_ACTIVE_BASE=500
+CONFIG_MODE_ACTIVE_MAX=1000
+CONFIG_MODE_IMPEDANCE_MAX=600
+
+# 蓝牙 BLE UART（Nordic UART Service；ESP32-S3 无经典蓝牙，仅 BLE）
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_BLE_ENABLED=y
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+CONFIG_ESP_WIFI_ENABLED=y
+
+# 自定义分区表（app 4MB）+ 16MB flash（板载 boya 16MB）
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# HTTP 请求头缓冲：默认 512B，手机 WebView/浏览器的请求头（UA+Accept+Sec-Fetch 等）
+# 会超过 512B 导致 ESP32 返回 "Header fields are too long"。加大到 2048B。
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048

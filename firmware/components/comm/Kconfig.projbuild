@@ -1,0 +1,15 @@
+menu "Comm (Transports)"
+
+    config ESC_AP_SSID
+        string "WiFi AP SSID"
+        default "AlwaysbeA"
+        help
+            Phone connects to this WiFi hotspot, then opens 192.168.4.1.
+
+    config ESC_AP_PASSWORD
+        string "WiFi AP password (empty = open)"
+        default "12345678"
+        help
+            Leave empty for an open hotspot.
+
+endmenu

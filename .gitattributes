@@ -1,0 +1,13 @@
+* text=auto
+
+*.c text eol=lf
+*.h text eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.csv text eol=lf
+*.bat text eol=crlf
+

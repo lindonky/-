@@ -1,0 +1,36 @@
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets and signing material
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+*.token
+.env
+.env.*
+local.properties
+
+# Build products and local caches
+firmware/build/
+firmware/managed_components/
+firmware/dependencies.lock
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/*.log
+firmware/build_log*.txt
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aab
+__pycache__/
+*.py[cod]
+

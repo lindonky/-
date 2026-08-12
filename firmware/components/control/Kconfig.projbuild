@@ -1,0 +1,145 @@
+menu "ESC Control"
+
+    config ESC_CALIBRATE_ON_BOOT
+        bool "Run ESC calibration sequence on boot"
+        default y
+        help
+            On boot all channels hold 2200us for CAL_HIGH_TIME then the stop
+            pulse for CAL_STOP_TIME, so the ESCs arm and beep. Disable after
+            the ESCs are calibrated.
+
+    config ESC_CALIB_HIGH_TIME_MS
+        int "Calibration high pulse hold time (ms)"
+        default 3000
+        range 3000 10000
+
+    config ESC_CALIB_STOP_TIME_MS
+        int "Calibration stop pulse hold time (ms)"
+        default 3000
+        range 3000 10000
+
+    config ESC_STOP_PULSE_US
+        int "Stop pulse width (us)"
+        default 1500
+        range 800 2200
+        help
+            Center / stop pulse. 1500us for most ESCs; if arming fails try 1480us.
+
+    config ESC_RAMP_STEP_US
+        int "Speed ramp step (us per step)"
+        default 50
+        range 10 200
+        help
+            PWM is changed in small steps toward the target so the motor never
+            jumps across the center instantly (protects the ESC when reversing).
+
+    config ESC_RAMP_INTERVAL_MS
+        int "Speed ramp step interval (ms)"
+        default 100
+        range 10 1000
+
+    config ESC_BIDIRECTIONAL
+        bool "Allow reverse (bidirectional ESCs)"
+        default n
+        help
+            Enable when the ESCs are successfully initialized in bidirectional
+            mode (negative speed = reverse). NOTE: the current ESC hardware only
+            runs forward (reverse calibration does not take), so negative
+            speeds are clamped to 0 while this is disabled.
+
+    config STAB_ENABLE_ON_BOOT
+        bool "Enable attitude stabilization on boot"
+        default n
+
+    config STAB_PERIOD_MS
+        int "Stabilization control loop period (ms)"
+        default 10
+        range 5 50
+
+    config STAB_STALE_TIMEOUT_MS
+        int "IMU data stale timeout (ms)"
+        default 200
+        range 50 1000
+        help
+            Stop output if no valid JY61P frame within this time.
+
+    config STAB_KP
+        int "Angle error gain (output per degree)"
+        default 20
+        range 1 100
+
+    config STAB_KD
+        int "Gyro damping gain"
+        default 5
+        range 0 50
+
+    config STAB_DEADBAND_DEG
+        int "Deadband (deg): leg rests inside this range"
+        default 3
+        range 0 30
+
+    config STAB_MAX_ANGLE_DEG
+        int "Max deviation (deg): stop output beyond this"
+        default 30
+        range 5 90
+
+    config STAB_MAX_OUTPUT
+        int "Max control output (0-1000)"
+        default 800
+        range 100 1000
+
+    config MODE_ASSIST_MAX
+        int "Assist mode max output (0-1000)"
+        default 800
+        range 100 1000
+        help
+            Assist (support) mode: attitude stabilization output upper limit.
+
+    config MODE_ACTIVE_BASE
+        int "Active mode base propulsion (0-1000)"
+        default 500
+        range 0 1000
+        help
+            Active mode keeps the propulsion thruster at this constant
+            forward level; the rudders keep the attitude.
+
+    config MODE_ACTIVE_MAX
+        int "Active mode max output (0-1000)"
+        default 1000
+        range 100 1000
+        help
+            Active mode output upper limit (propulsion + rudder diff).
+
+    config MODE_IMPEDANCE_MAX
+        int "Impedance mode max output (0-1000)"
+        default 600
+        range 100 1000
+        help
+            Impedance mode: reverses propulsion when the leg lifts
+            (requires bidirectional ESCs; single-direction ESCs just slow
+            to a stop). Output upper limit for both reverse and rudders.
+
+    config STAB_SWAP_PITCH_ROLL
+        bool "Swap pitch/roll (JY61P mounted rotated 90 deg)"
+        default n
+        help
+            Select when the JY61P is mounted 90 degrees rotated on the leg:
+            pitch/roll measurement and gyro are exchanged before control.
+
+    config STAB_PITCH_SIGN
+        int "Pitch output sign (+1/-1)"
+        default 1
+        range -1 1
+        help
+            Flip to -1 if the leg pitches the wrong way under stabilization
+            (forward/back direction reversed).
+
+    config STAB_ROLL_SIGN
+        int "Roll output sign (+1/-1)"
+        default 1
+        range -1 1
+        help
+            Flip to -1 if the leg rolls the wrong way under stabilization
+            (left/right direction reversed).
+
+endmenu

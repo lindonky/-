@@ -1,0 +1,52 @@
+menu "BSP (Board Support)"
+
+    config ESC_MOTOR_GPIO_1
+        int "ESC 1 signal GPIO"
+        default 15
+        help
+            Yellow signal wire of ESC 1.
+
+    config ESC_MOTOR_GPIO_2
+        int "ESC 2 signal GPIO"
+        default 16
+        help
+            Yellow signal wire of ESC 2.
+
+    config ESC_MOTOR_GPIO_3
+        int "ESC 3 signal GPIO"
+        default 14
+        help
+            Yellow signal wire of ESC 3.
+
+    config ESC_CONSOLE_BAUD
+        int "Console UART baud rate"
+        default 115200
+        help
+            Baud rate of the on-board CH340 serial (UART0, GPIO43/44).
+
+    config ESC_BT_NAME
+        string "Bluetooth (BLE) device name"
+        default "AlwaysbeA"
+        help
+            BLE advertising name shown when scanning from a phone.
+
+    config ESC_IMU_UART_RX_GPIO
+        int "JY61P UART RX GPIO (JY61P TX wire)"
+        default 6
+        help
+            JY61P sends attitude data on this pin (UART2 RX).
+
+    config ESC_IMU_UART_TX_GPIO
+        int "JY61P UART TX GPIO (optional, for readback)"
+        default 5
+        help
+            UART2 TX, only needed if you want to read back JY61P config.
+
+    config ESC_IMU_UART_BAUD
+        int "JY61P UART baud rate"
+        default 9600
+        help
+            JY61P 出厂多为 115200，但不少模块被设成 9600；以实测为准
+            （STAB 查询里 rx 有字节但 frames=0 即为波特率不匹配）。
+
+endmenu
