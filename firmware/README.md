@@ -105,6 +105,7 @@ CAL
 训练状态响应包含 `algo`、`device_boot` 和当前 `limits`，便于导出后追溯算法版本、区分重启后的会话 ID，并保留当次工程阈值。内嵌页面在手机 WebView 的本地存储中最多保留 100 次已结束会话，可导出 JSON/CSV；清除 App 数据会同时删除这些历史。
 
 `CAPTURE` 用于轴向和阈值标定：有效 IMU 样本在 ESP32 RAM 中高频记录，默认上限 1200 条，停止后从 `/api/capture.csv` 导出。详见 `docs/CALIBRATION_CAPTURE.md`。
+导出后可用 `python tools/analyze_calibration_capture.py <capture.csv>` 检查丢帧、采样率、轴变化范围和主动模式 T2 中位一致性。
 
 ## 串口调试
 

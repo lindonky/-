@@ -77,3 +77,24 @@ GET /api/capture.csv
 - 统计计步漏检、重复计数以及疑似跌倒误报，保留人工视频标注作为真值。
 
 不得仅根据几个样本声称临床正确率、跌倒识别准确率、膝关节安全角度或患者肌力。
+
+## 7. 离线质量检查与客观统计
+
+仓库内置纯 Python 标准库工具，不需要安装 NumPy/Pandas：
+
+```powershell
+python firmware/tools/analyze_calibration_capture.py alwaysbea-capture-normal-lift-20260812-193000.csv
+python firmware/tools/analyze_calibration_capture.py capture.csv --format json --output capture-report.json
+python firmware/tools/analyze_calibration_capture.py capture.csv --format markdown --output capture-report.md
+```
+
+工具会检查和统计：
+
+- schema、必需列与数字格式。
+- 时间戳间隔、实测采样率、重复/逆序时间戳、缺失/非递增样本序号。
+- 主运动/横向/原始三角轴、陀螺、加速度和控制输出的最小、最大、范围和 P95 绝对值。
+- 原始角度中的主变化轴线索（只是线索，仍要与视频/物理安装核对）。
+- 合加速度、IMU/急停/稳定标志。
+- 主动模式所有样本的 T2 是否严格等于 1500 µs。
+
+无警告时进程退出码为 `0`，发现数据/安全一致性警告时为 `1`，格式或文件错误时为 `2`。这个工具不会自动产生患者阈值，也不会评估临床正确率。
