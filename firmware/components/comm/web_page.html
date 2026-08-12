@@ -28,6 +28,7 @@
   .btn{border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:12px 10px;
        cursor:pointer;transition:transform .06s, filter .15s;user-select:none;}
   .btn:active{transform:scale(.94);}
+  .btn:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.35);transform:none;}
   .btn.acc{background:linear-gradient(180deg,#0891b2,#0e7490);}
   .btn.ok{background:linear-gradient(180deg,#059669,#047857);}
   .btn.warn{background:linear-gradient(180deg,#d97706,#b45309);}
@@ -43,6 +44,11 @@
   .grow{flex:1;}
   .estop{width:100%;padding:18px;font-size:18px;letter-spacing:4px;box-shadow:0 0 0 0 rgba(239,68,68,.5);
          animation:pulse 2s infinite;}
+  .btn.danger.estop:disabled{opacity:1;filter:none;cursor:not-allowed;}
+  .recover{width:100%;margin-top:8px;padding:13px;font-size:15px;}
+  .toast{position:sticky;top:8px;z-index:20;margin:0 0 10px;padding:10px 12px;border-radius:11px;
+         background:#064e3b;border:1px solid var(--ok);color:#d1fae5;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.3);}
+  .toast.err{background:#7f1d1d;border-color:var(--danger);color:#fee2e2;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.45);}70%{box-shadow:0 0 0 12px rgba(239,68,68,0);}100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}}
   .mhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
   .mname{font-weight:700;font-size:17px;}
@@ -138,6 +144,8 @@
 </div>
 
 <button class="btn danger estop" id="btnEstop">⛔ 急停 STOP</button>
+<button class="btn warn recover" id="btnRecover" hidden>▶ 解除急停（不会恢复训练）</button>
+<div class="toast" id="uiNotice" role="status" aria-live="polite" hidden></div>
 
 <div class="card" style="margin-top:12px;">
   <div class="mhead"><span class="mname">训练档案</span><span class="pill" id="lengthMode">身高估算</span></div>
@@ -169,9 +177,9 @@
   </div>
   <div class="quality" id="qualityInfo">动作评价将在完成第一步后显示</div>
   <div class="trainActions">
-    <button class="btn ok primary" id="trainStart">开始训练</button>
-    <button class="btn warn" id="trainPause">暂停</button>
-    <button class="btn ghost" id="trainFinish">结束</button>
+    <button class="btn ok primary" id="trainStart" disabled>连接设备中</button>
+    <button class="btn warn" id="trainPause" disabled>暂停</button>
+    <button class="btn ghost" id="trainFinish" disabled>结束</button>
   </div>
   <div class="notice warn">主动模式不会启动中间推进电机；左右电机只做横向腿位纠偏。开始前请保持小腿中立，并确保有治疗人员或保护人员在场。</div>
 </div>
@@ -367,13 +375,35 @@ const HISTORY_KEY="alwaysbea_training_history_v1";
 const HISTORY_IGNORE_KEY="alwaysbea_training_ignored_session_v1";
 const HISTORY_MAX=100;
 let captureStatus=null;
+let noticeTimer=null;
+
+function showNotice(message,err){
+  const el=document.getElementById("uiNotice");
+  clearTimeout(noticeTimer);
+  el.textContent=message;
+  el.classList.toggle("err",!!err);
+  el.hidden=false;
+  noticeTimer=setTimeout(()=>{el.hidden=true;},4200);
+}
 
 /* ---------- 命令发送 ---------- */
 function sendCmd(cmd){
   return fetch("/api/cmd", {method:"POST", body:cmd})
     .then(r=>r.text())
-    .then(t=>{ lastAck=t.trim(); addLog(cmd, lastAck); return lastAck; })
-    .catch(e=>{ addLog(cmd, "ERR:"+e, true); throw e; });
+    .then(t=>{
+      lastAck=t.trim();
+      const rejected=/(?:^|\n)(?:ERR(?::|$)|[A-Z_]+_ERR(?::|$))/m.test(lastAck);
+      addLog(cmd,lastAck||"(无返回)",rejected);
+      if(rejected){
+        showNotice("设备拒绝操作："+(lastAck||"未知原因"),true);
+        const e=new Error(lastAck||"device rejected command");e.deviceAck=true;throw e;
+      }
+      return lastAck;
+    })
+    .catch(e=>{
+      if(!e.deviceAck){addLog(cmd,"ERR:"+e,true);showNotice("设备连接失败，请检查 Wi-Fi 和设备状态",true);}
+      throw e;
+    });
 }
 function addLog(cmd, resp, err){
   const now = new Date();
@@ -455,7 +485,7 @@ function saveFinishedSession(t){
 }
 function csvCell(v){const s=v==null?"":String(v);return '"'+s.replace(/"/g,'""')+'"';}
 function exportHistory(kind){
-  const h=readHistory(); if(!h.length){addLog("导出","暂无历史记录",true);return;}
+  const h=readHistory(); if(!h.length){addLog("导出","暂无历史记录",true);showNotice("暂无可导出的训练历史",true);return;}
   let data,mime,name;
   if(kind==="json"){
     data=JSON.stringify({schema:"alwaysbea-training-history-v1",exported_at:new Date().toISOString(),sessions:h},null,2);
@@ -480,6 +510,8 @@ function renderTraining(t){
   document.getElementById("scoreRing").style.setProperty("--score",score===null?0:score);
   document.getElementById("trainPill").textContent=TRAIN_STATE_CN[t.state]||t.state;
   let stateText=(TRAIN_STATE_CN[t.state]||t.state)+" · "+(TRAIN_PHASE_CN[t.phase]||t.phase);
+  const missingProfile=!(t.height_cm>=100&&t.height_cm<=230);
+  if(missingProfile&&t.state==="idle")stateText="请先填写并保存身高";
   if(t.fall_stage>0) stateText="⚠ 疑似跌倒检测阶段 "+t.fall_stage+" · 请人工确认";
   document.getElementById("trainState").textContent=stateText;
   metric("cadenceVal",t.cadence_spm,0,"");
@@ -501,10 +533,14 @@ function renderTraining(t){
   if(document.activeElement!==document.getElementById("heightInput")) document.getElementById("heightInput").value=t.height_cm>0?t.height_cm.toFixed(1):"";
   if(document.activeElement!==document.getElementById("shankInput")) document.getElementById("shankInput").value=t.shank_measured?t.shank_cm.toFixed(1):"0";
   const start=document.getElementById("trainStart");
-  start.textContent=t.state==="paused"?"继续训练":((t.state==="running")?"训练进行中":"开始训练");
-  start.disabled=t.state==="running";
+  start.textContent=missingProfile?"请先保存身高":(t.state==="paused"?"继续训练":((t.state==="running")?"训练进行中":"开始训练"));
+  start.disabled=t.state==="running"||stopped||missingProfile;
   document.getElementById("trainPause").disabled=t.state!=="running";
   document.getElementById("trainFinish").disabled=!(t.state==="running"||t.state==="paused");
+  const profileLocked=t.state==="running"||t.state==="paused";
+  document.getElementById("heightInput").disabled=profileLocked;
+  document.getElementById("shankInput").disabled=profileLocked;
+  document.getElementById("saveProfile").disabled=profileLocked;
   saveFinishedSession(t);
 }
 function pollTraining(){
@@ -513,10 +549,12 @@ function pollTraining(){
 document.getElementById("saveProfile").addEventListener("click",async()=>{
   const h=+document.getElementById("heightInput").value;
   const sh=+document.getElementById("shankInput").value||0;
+  if(!Number.isFinite(h)||h<100||h>230){showNotice("身高请输入 100–230 cm",true);return;}
+  if(!Number.isFinite(sh)||sh<0||sh>70){showNotice("实测小腿长请输入 0–70 cm；0 表示按身高估算",true);return;}
   try{
     await sendCmd("TRAIN HEIGHT "+h);await sendCmd("TRAIN SHANK "+sh);
     try{localStorage.setItem("alwaysbea_profile",JSON.stringify({height:h,shank:sh}));}catch(e){}
-    pollTraining();
+    showNotice("训练档案已保存",false);pollTraining();
   }catch(e){}
 });
 document.getElementById("trainStart").addEventListener("click",async()=>{
@@ -547,7 +585,7 @@ document.getElementById("clearHistory").addEventListener("click",()=>{
       }else{
         localStorage.removeItem(HISTORY_IGNORE_KEY);
       }
-      localStorage.removeItem(HISTORY_KEY);renderHistory();
+      localStorage.removeItem(HISTORY_KEY);renderHistory();showNotice("本地训练历史已清空",false);
     }catch(e){addLog("清空训练历史","本地存储不可用",true);}
   }
 });
@@ -593,7 +631,7 @@ document.getElementById("captureExport").addEventListener("click",async()=>{
       const url=URL.createObjectURL(new Blob([data],{type:mime}));
       const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }
-  }catch(e){addLog("导出标定数据","ERR:"+e,true);}
+  }catch(e){addLog("导出标定数据","ERR:"+e,true);showNotice("标定数据导出失败："+e,true);}
 });
 
 function setMotor(n, speed){  /* speed: -1000..1000，负值固件会钳到 0 */
@@ -661,6 +699,11 @@ function setStoppedUI(v){
   const btn = document.getElementById("btnEstop");
   btn.classList.toggle("latched", v);
   btn.textContent = v ? "⛔ 急停已锁定" : "⛔ 急停 STOP";
+  btn.disabled=v;
+  document.getElementById("btnRecover").hidden=!v;
+  const trainStart=document.getElementById("trainStart");
+  if(v)trainStart.disabled=true;
+  else if(trainStatus)trainStart.disabled=trainStatus.state==="running"||!(trainStatus.height_cm>=100&&trainStatus.height_cm<=230);
   if(v){
     N.forEach(n=>{ clearTimeout(timers[n]); sl[n].value=0; sp[n].textContent="0%"; sp[n].classList.add("zero"); });
     clearTimeout(tTall); slTall.value=0; document.getElementById("lbTall").textContent="0%";
@@ -673,10 +716,15 @@ function estopNow(){
   sendCmd("STOP").catch(()=>{});
 }
 function startNow(){
-  setStoppedUI(false);
-  sendCmd("START").catch(()=>{});
+  sendCmd("START").then(()=>{
+    setStoppedUI(false);
+    showNotice(trainStatus&&trainStatus.state==="paused"
+      ?"急停已解除；训练仍保持暂停，请确认安全后点击继续训练"
+      :"急停已解除，设备等待下一步操作",false);
+  }).catch(()=>{});
 }
 document.getElementById("btnEstop").addEventListener("click", estopNow);
+document.getElementById("btnRecover").addEventListener("click", startNow);
 document.getElementById("btnStart").addEventListener("click", startNow);
 document.getElementById("btnStop").addEventListener("click", estopNow);
 document.getElementById("btnCal").addEventListener("click", ()=>{

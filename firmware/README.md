@@ -74,6 +74,22 @@ HTTP 接口：
 | `/api/capture.csv` | GET | 停止采集后流式导出 CSV |
 | `/api/cmd` | POST | body 为文本命令 |
 
+### 本地无硬件 UI 验证
+
+开发内嵌网页时可使用只位于 `firmware/tools` 的模拟设备服务；它不会进入固件，也不会驱动电机：
+
+```powershell
+python firmware/tools/ui_mock_server.py --port 8765
+```
+
+浏览器打开 `http://127.0.0.1:8765/` 后，可验证训练开始/暂停/继续/结束、急停锁定、报告和采集面板。模拟数据仅用于界面和状态机联调，不能替代 JY61P、台架或水中标定。
+
+内嵌脚本语法、DOM ID 和折叠标签可用以下命令快速检查：
+
+```powershell
+node firmware/tools/check_web_page.mjs firmware/components/comm/web_page.html
+```
+
 ## 控制命令
 
 所有传输共用相同的行文本协议：
