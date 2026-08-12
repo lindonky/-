@@ -97,7 +97,11 @@ PULSE n us
 CAL
 ```
 
-详细说明见 [docs/HANDOVER.md](docs/HANDOVER.md) 和 [firmware/README.md](firmware/README.md)。
+详细说明：
+
+- [产品需求基线与开发路线](docs/PRODUCT_REQUIREMENTS.md)
+- [工程交接说明](docs/HANDOVER.md)
+- [固件说明](firmware/README.md)
 
 ## 安全规则
 
