@@ -12,6 +12,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -36,6 +37,7 @@ extern const uint8_t leg_model_js_end[]   asm("_binary_leg_model_js_end");
 static char            s_resp_buf[HTTP_RESP_MAX];
 static SemaphoreHandle_t s_resp_sem;   /* 协议层回传一行 -> 置位 */
 static SemaphoreHandle_t s_req_mutex;  /* 同时只处理一个 HTTP 指令 */
+static uint32_t          s_boot_id;    /* 区分设备重启后重复的会话 ID */
 
 /* --- 协议层回传（HTTP 传输）：拷贝到响应缓冲 --- */
 static void http_cmd_send(void *ctx, const char *data, size_t len)
@@ -113,10 +115,10 @@ static esp_err_t handle_training_status(httpd_req_t *req)
     training_status_t ts;
     const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000U);
     training_session_get_status(&ts, now);
-    char buf[1024];
+    char buf[2048];
     const int len = snprintf(
         buf, sizeof(buf),
-        "{\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
+        "{\"algo\":\"single-leg-mvp-0.1\",\"device_boot\":%lu,\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
         "\"steps\":%lu,\"qualified\":%lu,\"invalid\":%lu,\"score_pct\":%.1f,"
         "\"rom_last_deg\":%.1f,\"rom_avg_deg\":%.1f,\"peak_speed_dps\":%.1f,"
         "\"cycle_s\":%.2f,\"lift_s\":%.2f,\"return_s\":%.2f,\"cadence_spm\":%.1f,"
@@ -125,8 +127,11 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         "\"step_cm_est\":%.1f,\"step_avg_cm_est\":%.1f,"
         "\"intervention_mean_pct\":%.1f,\"intervention_peak_pct\":%.1f,\"correction_load_index\":%.1f,"
         "\"quality_flags\":%lu,\"fall_stage\":%u,\"fall_events\":%lu,"
-        "\"accel_g\":%.2f,\"gyro_dps\":%.1f,\"fall_tilt_deg\":%.1f,\"event\":\"%s\"}",
-        training_state_name(ts.state), training_phase_name(ts.phase),
+        "\"accel_g\":%.2f,\"gyro_dps\":%.1f,\"fall_tilt_deg\":%.1f,\"event\":\"%s\","
+        "\"limits\":{\"lift_start_deg\":%d,\"rom_min_deg\":%d,\"rom_max_deg\":%d,"
+        "\"rom_limit_deg\":%d,\"speed_min_dps\":%d,\"speed_max_dps\":%d,"
+        "\"cycle_min_ms\":%d,\"cycle_max_ms\":%d,\"lateral_max_deg\":%d,\"return_deg\":%d}}",
+        (unsigned long)s_boot_id, training_state_name(ts.state), training_phase_name(ts.phase),
         (unsigned long)ts.sessionId, (unsigned long)ts.elapsedMs, ts.mode,
         (unsigned long)ts.steps, (unsigned long)ts.qualifiedSteps,
         (unsigned long)ts.invalidCycles, ts.qualifiedPct,
@@ -138,7 +143,12 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         ts.interventionMeanPct, ts.interventionPeakPct, ts.correctionLoadIndex,
         (unsigned long)ts.lastQualityFlags, (unsigned int)ts.fallStage,
         (unsigned long)ts.fallEvents, ts.lastAccelMagnitudeG,
-        ts.lastGyroMagnitudeDps, ts.lastFallTiltDeg, ts.lastEvent);
+        ts.lastGyroMagnitudeDps, ts.lastFallTiltDeg, ts.lastEvent,
+        CONFIG_TRAIN_LIFT_START_DEG, CONFIG_TRAIN_ROM_MIN_DEG,
+        CONFIG_TRAIN_ROM_MAX_DEG, CONFIG_TRAIN_ROM_LIMIT_DEG,
+        CONFIG_TRAIN_SPEED_MIN_DPS, CONFIG_TRAIN_SPEED_MAX_DPS,
+        CONFIG_TRAIN_CYCLE_MIN_MS, CONFIG_TRAIN_CYCLE_MAX_MS,
+        CONFIG_TRAIN_LATERAL_MAX_DEG, CONFIG_TRAIN_RETURN_WINDOW_DEG);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, buf, (len > 0 && len < (int)sizeof(buf)) ? len : HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -248,6 +258,8 @@ static void http_server_init(void)
 
 void transport_http_init(void)
 {
+    s_boot_id = esp_random();
+    if (s_boot_id == 0U) s_boot_id = 1U;
     s_resp_sem   = xSemaphoreCreateBinary();
     s_req_mutex  = xSemaphoreCreateMutex();
     wifi_ap_init();

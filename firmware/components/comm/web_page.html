@@ -117,7 +117,15 @@
   details.engineering{margin-top:12px;} details.engineering>summary{cursor:pointer;list-style:none;padding:14px;border:1px solid var(--line);
              border-radius:14px;background:var(--card);font-weight:700;color:var(--dim);}
   details.engineering[open]>summary{margin-bottom:12px;color:var(--txt);border-color:var(--acc);}
+  .reportMain{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+  .reportItem{background:#0b1220;border:1px solid var(--line);border-radius:11px;padding:9px 6px;text-align:center;}
+  .reportItem b{display:block;font-size:19px;color:var(--acc);font-variant-numeric:tabular-nums}.reportItem span{font-size:10px;color:var(--dim);}
+  .historyList{display:grid;gap:8px;margin-top:10px;max-height:330px;overflow:auto;}
+  .historyRow{display:grid;grid-template-columns:1.3fr .7fr .7fr .7fr;gap:6px;align-items:center;background:#0b1220;
+              border:1px solid var(--line);border-radius:11px;padding:9px 10px;font-size:12px;}
+  .historyRow strong{font-size:13px}.historyRow span{text-align:right;font-variant-numeric:tabular-nums}.historyEmpty{color:var(--dim);font-size:12px;text-align:center;padding:18px 0;}
   @media(max-width:390px){.trainTop{grid-template-columns:116px 1fr}.scoreRing{width:110px;height:110px}.stepBig{font-size:40px}.metrics{grid-template-columns:repeat(2,1fr)}.profileGrid{grid-template-columns:1fr 1fr}.profileGrid button{grid-column:1/-1}.trainActions{grid-template-columns:1fr 1fr}.trainActions .primary{grid-column:1/-1}}
+  @media(max-width:390px){.reportMain{grid-template-columns:repeat(2,1fr)}.historyRow{grid-template-columns:1.4fr .6fr .6fr}.historyRow .historyRom{display:none}}
 </style>
 </head>
 <body>
@@ -166,6 +174,28 @@
     <button class="btn ghost" id="trainFinish">结束</button>
   </div>
   <div class="notice warn">主动模式不会启动中间推进电机；左右电机只做横向腿位纠偏。开始前请保持小腿中立，并确保有治疗人员或保护人员在场。</div>
+</div>
+
+<div class="card">
+  <div class="mhead"><span class="mname">本地训练报告</span><span class="pill" id="historyCount">0 次</span></div>
+  <div id="reportEmpty" class="historyEmpty">完成一次训练后，将在当前手机保存会话摘要。</div>
+  <div id="reportBody" hidden>
+    <div class="sub" id="reportTitle">最近一次训练</div>
+    <div class="reportMain">
+      <div class="reportItem"><b id="reportSteps">0</b><span>步数</span></div>
+      <div class="reportItem"><b id="reportScore">--</b><span>轨迹达标率</span></div>
+      <div class="reportItem"><b id="reportRom">--</b><span>平均 ROM</span></div>
+      <div class="reportItem"><b id="reportStepCm">--</b><span>平均估算步长</span></div>
+    </div>
+    <div class="notice" id="reportNote"></div>
+  </div>
+  <div class="historyList" id="historyList"></div>
+  <div class="row" style="margin-top:10px;">
+    <button class="btn ghost grow" id="exportJson">导出 JSON</button>
+    <button class="btn ghost grow" id="exportCsv">导出 CSV</button>
+    <button class="btn danger" id="clearHistory">清空</button>
+  </div>
+  <div class="notice">报告保存在当前 App/WebView 的本地存储中；清除 App 数据会删除历史。估算步长和轨迹达标率不是临床测量。</div>
 </div>
 
 <details class="engineering">
@@ -308,6 +338,10 @@ let online = false;
 let stopped = false;   /* 急停锁定：期间忽略一切手动指令 */
 let curMode = 0;       /* 0=助力 1=主动 2=阻抗 */
 let trainStatus = null;
+let lastSavedSessionKey = null;
+const HISTORY_KEY="alwaysbea_training_history_v1";
+const HISTORY_IGNORE_KEY="alwaysbea_training_ignored_session_v1";
+const HISTORY_MAX=100;
 
 /* ---------- 命令发送 ---------- */
 function sendCmd(cmd){
@@ -338,9 +372,79 @@ function fmtTime(ms){
   const total=Math.max(0,Math.floor((ms||0)/1000));
   return String(Math.floor(total/60)).padStart(2,"0")+":"+String(total%60).padStart(2,"0");
 }
-function metric(id,v,digits,suffix){
+function metric(id,v,digits,suffix,allowZero){
   const el=document.getElementById(id);
-  el.textContent=(Number.isFinite(v)&&v>0)?v.toFixed(digits)+(suffix||""):"--";
+  const valid=Number.isFinite(v)&&(allowZero?v>=0:v>0);
+  el.textContent=valid?v.toFixed(digits)+(suffix||""):"--";
+}
+function num(v,fallback){return Number.isFinite(+v)?+v:(fallback||0);}
+function readHistory(){
+  try{
+    const v=JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]");
+    return Array.isArray(v)?v:[];
+  }catch(e){return [];}
+}
+function writeHistory(items){
+  try{localStorage.setItem(HISTORY_KEY,JSON.stringify(items.slice(0,HISTORY_MAX)));return true;}catch(e){return false;}
+}
+function reportDate(iso){
+  try{return new Date(iso).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});}catch(e){return iso;}
+}
+function renderHistory(){
+  const h=readHistory();
+  document.getElementById("historyCount").textContent=h.length+" 次";
+  const list=document.getElementById("historyList"); list.innerHTML="";
+  const empty=document.getElementById("reportEmpty"),body=document.getElementById("reportBody");
+  if(!h.length){empty.hidden=false;body.hidden=true;list.innerHTML="<div class='historyEmpty'>暂无历史记录</div>";return;}
+  empty.hidden=true;body.hidden=false;
+  const x=h[0];
+  document.getElementById("reportTitle").textContent="最近训练 · "+reportDate(x.finished_at)+" · "+fmtTime(x.elapsed_ms);
+  document.getElementById("reportSteps").textContent=num(x.steps,0);
+  document.getElementById("reportScore").textContent=num(x.steps,0)?Math.round(num(x.score_pct,0))+"%":"--";
+  document.getElementById("reportRom").textContent=num(x.rom_avg_deg,0)>0?num(x.rom_avg_deg,0).toFixed(1)+"°":"--";
+  document.getElementById("reportStepCm").textContent=num(x.step_avg_cm_est,0)>0?num(x.step_avg_cm_est,0).toFixed(1)+" cm":"--";
+  document.getElementById("reportNote").textContent="设备平均介入 "+num(x.intervention_mean_pct,0).toFixed(0)+"% · 疑似跌倒 "+num(x.fall_events,0)+
+    " 次 · 小腿长度 "+(x.shank_measured?"实测":"身高估算")+" · 算法 "+(x.algo||"未记录");
+  h.slice(0,20).forEach(v=>{
+    const row=document.createElement("div"); row.className="historyRow";
+    row.innerHTML="<strong>"+escapeHtml(reportDate(v.finished_at))+"</strong><span>"+num(v.steps,0)+" 步</span><span>"+
+      (num(v.steps,0)?Math.round(num(v.score_pct,0))+"%":"--")+"</span><span class='historyRom'>"+num(v.rom_avg_deg,0).toFixed(1)+"°</span>";
+    list.appendChild(row);
+  });
+}
+function saveFinishedSession(t){
+  if(!t||t.state!=="finished"||!t.id)return;
+  const sessionKey=String(t.device_boot)+":"+String(t.id);
+  if(sessionKey===lastSavedSessionKey)return;
+  try{
+    if(localStorage.getItem(HISTORY_IGNORE_KEY)===sessionKey){lastSavedSessionKey=sessionKey;return;}
+  }catch(e){}
+  const h=readHistory();
+  if(h.some(v=>v.id===t.id&&v.device_boot===t.device_boot)){
+    lastSavedSessionKey=sessionKey;renderHistory();return;
+  }
+  const record={...t,finished_at:new Date().toISOString()};
+  h.unshift(record);
+  if(writeHistory(h)){lastSavedSessionKey=sessionKey;renderHistory();}
+  else{lastSavedSessionKey=sessionKey;addLog("保存训练报告","本地存储空间不足",true);}
+}
+function csvCell(v){const s=v==null?"":String(v);return '"'+s.replace(/"/g,'""')+'"';}
+function exportHistory(kind){
+  const h=readHistory(); if(!h.length){addLog("导出","暂无历史记录",true);return;}
+  let data,mime,name;
+  if(kind==="json"){
+    data=JSON.stringify({schema:"alwaysbea-training-history-v1",exported_at:new Date().toISOString(),sessions:h},null,2);
+    mime="application/json;charset=utf-8";name="alwaysbea-training-history.json";
+  }else{
+    const cols=["finished_at","id","elapsed_ms","steps","qualified","score_pct","rom_avg_deg","step_avg_cm_est","cadence_spm","lateral_deg","intervention_mean_pct","fall_events","height_cm","shank_cm","shank_measured","algo"];
+    data="\ufeff"+cols.join(",")+"\r\n"+h.map(x=>cols.map(k=>csvCell(x[k])).join(",")).join("\r\n");
+    mime="text/csv;charset=utf-8";name="alwaysbea-training-history.csv";
+  }
+  if(window.AlwaysbeABridge&&typeof window.AlwaysbeABridge.saveText==="function"){
+    window.AlwaysbeABridge.saveText(name,mime,data);return;
+  }
+  const url=URL.createObjectURL(new Blob([data],{type:mime}));
+  const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function renderTraining(t){
   trainStatus=t;
@@ -356,8 +460,8 @@ function renderTraining(t){
   metric("cadenceVal",t.cadence_spm,0,"");
   metric("romVal",t.rom_last_deg,1,"°");
   metric("stepLengthVal",t.step_cm_est,1,"");
-  metric("lateralVal",t.lateral_deg,1,"°");
-  metric("interventionVal",t.intervention_mean_pct,0,"%");
+  metric("lateralVal",t.lateral_deg,1,"°",true);
+  metric("interventionVal",t.intervention_mean_pct,0,"%",true);
   metric("cycleVal",t.cycle_s,1,"");
   const flags=t.quality_flags||0;
   const issues=QUALITY_TEXT.filter(q=>flags&q[0]).map(q=>q[1]);
@@ -376,6 +480,7 @@ function renderTraining(t){
   start.disabled=t.state==="running";
   document.getElementById("trainPause").disabled=t.state!=="running";
   document.getElementById("trainFinish").disabled=!(t.state==="running"||t.state==="paused");
+  saveFinishedSession(t);
 }
 function pollTraining(){
   fetch("/api/training/status").then(r=>r.json()).then(renderTraining).catch(()=>{});
@@ -405,6 +510,21 @@ document.getElementById("trainStart").addEventListener("click",async()=>{
 document.getElementById("trainPause").addEventListener("click",()=>sendCmd("TRAIN PAUSE").then(pollTraining).catch(()=>{}));
 document.getElementById("trainFinish").addEventListener("click",async()=>{
   try{await sendCmd("TRAIN STOP");await sendCmd("STAB OFF");pollTraining();}catch(e){}
+});
+document.getElementById("exportJson").addEventListener("click",()=>exportHistory("json"));
+document.getElementById("exportCsv").addEventListener("click",()=>exportHistory("csv"));
+document.getElementById("clearHistory").addEventListener("click",()=>{
+  if(confirm("确认清空当前手机保存的全部训练历史？此操作无法撤销。")){
+    try{
+      if(trainStatus&&trainStatus.state==="finished"){
+        lastSavedSessionKey=String(trainStatus.device_boot)+":"+String(trainStatus.id);
+        localStorage.setItem(HISTORY_IGNORE_KEY,lastSavedSessionKey);
+      }else{
+        localStorage.removeItem(HISTORY_IGNORE_KEY);
+      }
+      localStorage.removeItem(HISTORY_KEY);renderHistory();
+    }catch(e){addLog("清空训练历史","本地存储不可用",true);}
+  }
 });
 
 function setMotor(n, speed){  /* speed: -1000..1000，负值固件会钳到 0 */
@@ -822,6 +942,7 @@ setInterval(poll, 500);
 setInterval(pollTraining, 500);
 poll();
 pollTraining();
+renderHistory();
 setTimeout(restoreProfile,800);
 animate3d();
 </script>
