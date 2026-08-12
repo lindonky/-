@@ -14,6 +14,7 @@
 - ESP32 内嵌控制网页及实时 3D 姿态显示
 - 单腿主动训练会话：计步、小腿 ROM、动作达标率、纠偏介入和疑似跌倒事件
 - 本地保存最近 100 次训练摘要，支持 JSON/CSV 导出
+- 固定 RAM 高频 JY61P/三路 PWM 标定采集，支持带动作标签的 CSV 导出
 - Android 7+ App：连接设备热点并打开 WebView 控制页
 - UART、HTTP 和 BLE UART 共用一套文本指令协议
 
@@ -98,6 +99,7 @@ STAB ON|OFF|ZERO
 TRAIN START|PAUSE|RESUME|STOP|RESET
 TRAIN HEIGHT <cm>
 TRAIN SHANK <cm>
+CAPTURE START [label]|STOP|CLEAR
 PULSE n us
 CAL
 ```
@@ -107,6 +109,7 @@ CAL
 - [产品需求基线与开发路线](docs/PRODUCT_REQUIREMENTS.md)
 - [持续开发日志](docs/DEVELOPMENT_LOG.md)
 - [单腿训练指标与安全算法依据](docs/ALGORITHM_BASIS.md)
+- [JY61P 单腿标定数据采集手册](docs/CALIBRATION_CAPTURE.md)
 - [工程交接说明](docs/HANDOVER.md)
 - [固件说明](firmware/README.md)
 

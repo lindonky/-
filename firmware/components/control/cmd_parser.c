@@ -3,6 +3,7 @@
  */
 #include "cmd_parser.h"
 
+#include "calibration_capture.h"
 #include "control_mode.h"
 #include "stabilize.h"
 #include "thruster.h"
@@ -75,6 +76,7 @@ static void handle_help(const cmd_transport_t *t)
     send_line(t, "  TRAIN START|PAUSE|RESUME|STOP|RESET   training session");
     send_line(t, "  TRAIN HEIGHT <cm>  set body height 100..230cm");
     send_line(t, "  TRAIN SHANK <cm>   measured shank 20..70cm; 0=estimate");
+    send_line(t, "  CAPTURE START [label]|STOP|CLEAR   temporary high-rate IMU capture");
     send_line(t, "  PULSE <n> <us>     direct pulse 800..2200us (debug)");
     send_line(t, "  STATUS             show current/target pulses");
     send_line(t, "  CAL                re-run calibration (~6s)");
@@ -183,6 +185,33 @@ static void handle_cmd(const cmd_transport_t *t, const char *line)
             }
         } else {
             send_line(t, "TRAIN_ERR:arg");
+        }
+    } else if (strcasecmp(cmd, "CAPTURE") == 0) {
+        const uint32_t now = now_ms();
+        const stabilize_status_t *st = stabilize_get_status();
+        calibration_capture_status_t cs;
+        char sub[16];
+        calibration_capture_get_status(&cs, now);
+        if (sscanf(line, "%*s %15s", sub) != 1) {
+            send_line(t, "CAPTURE:%s label=%s samples=%lu/%lu time=%.1fs rate=%.1fHz full=%d",
+                      calibration_capture_state_name(cs.state),
+                      cs.label[0] ? cs.label : "-",
+                      (unsigned long)cs.sampleCount, (unsigned long)cs.capacity,
+                      (double)cs.durationMs / 1000.0, (double)cs.sampleRateHz,
+                      (int)cs.full);
+        } else if (strcasecmp(sub, "START") == 0) {
+            char label[32] = "unlabeled";
+            (void)sscanf(line, "%*s %*s %31s", label);
+            send_line(t, calibration_capture_start(now, st->imuValid, label)
+                             ? "CAPTURE_OK:started" : "CAPTURE_ERR:imu_or_state");
+        } else if (strcasecmp(sub, "STOP") == 0) {
+            send_line(t, calibration_capture_stop()
+                             ? "CAPTURE_OK:stopped" : "CAPTURE_ERR:state");
+        } else if (strcasecmp(sub, "CLEAR") == 0) {
+            send_line(t, calibration_capture_clear()
+                             ? "CAPTURE_OK:cleared" : "CAPTURE_ERR:recording_or_exporting");
+        } else {
+            send_line(t, "CAPTURE_ERR:arg");
         }
     } else if (strcasecmp(cmd, "STATUS") == 0) {
         send_line(t,

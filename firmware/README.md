@@ -70,6 +70,8 @@ HTTP 接口：
 | `/leg.js` | GET | 3D 腿部模型 |
 | `/api/status` | GET | JSON 状态 |
 | `/api/training/status` | GET | 单腿训练会话 JSON 摘要 |
+| `/api/capture/status` | GET | 高频标定采集的 RAM 状态 |
+| `/api/capture.csv` | GET | 停止采集后流式导出 CSV |
 | `/api/cmd` | POST | body 为文本命令 |
 
 ## 控制命令
@@ -90,6 +92,7 @@ TRAIN
 TRAIN START|PAUSE|RESUME|STOP|RESET
 TRAIN HEIGHT <100..230 cm>
 TRAIN SHANK <20..70 cm>   # 0 恢复身高比例估算
+CAPTURE START [label]|STOP|CLEAR
 PULSE <n> <us>
 CAL
 ```
@@ -100,6 +103,8 @@ CAL
 完整抬起—回位。身高/小腿长仅用于等效步长估算。
 
 训练状态响应包含 `algo`、`device_boot` 和当前 `limits`，便于导出后追溯算法版本、区分重启后的会话 ID，并保留当次工程阈值。内嵌页面在手机 WebView 的本地存储中最多保留 100 次已结束会话，可导出 JSON/CSV；清除 App 数据会同时删除这些历史。
+
+`CAPTURE` 用于轴向和阈值标定：有效 IMU 样本在 ESP32 RAM 中高频记录，默认上限 1200 条，停止后从 `/api/capture.csv` 导出。详见 `docs/CALIBRATION_CAPTURE.md`。
 
 ## 串口调试
 

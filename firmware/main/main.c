@@ -4,6 +4,7 @@
 #include "sdkconfig.h"
 
 #include "bsp.h"
+#include "calibration_capture.h"
 #include "cmd_parser.h"
 #include "stabilize.h"
 #include "thruster.h"
@@ -23,6 +24,7 @@ void app_main(void)
     bsp_init();
     thruster_init();
     training_session_init();
+    calibration_capture_init();
     cmd_parser_init();
 
     xTaskCreate(thruster_task, "thruster", 4096, NULL, 5, NULL);
@@ -39,5 +41,5 @@ void app_main(void)
     thruster_stop_all();
 #endif
 
-    ESP_LOGW(TAG, "ready. commands: HELP / START / STOP / T1|T2|T3 <speed> / TALL <speed> / PULSE <n> <us> / STATUS / CAL");
+    ESP_LOGW(TAG, "ready. commands: HELP / START / STOP / MODE / TRAIN / CAPTURE / STATUS / CAL");
 }

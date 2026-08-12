@@ -166,6 +166,15 @@ menu "ESC Control"
 
     endmenu
 
+    config CAPTURE_MAX_SAMPLES
+        int "Calibration capture sample capacity"
+        default 1200
+        range 200 3000
+        help
+            Number of valid IMU samples kept in RAM for a temporary calibration
+            capture. At the usual JY61P UART output rate this is tens of seconds.
+            Captures are never written to flash and are lost on reboot.
+
     config STAB_SWAP_PITCH_ROLL
         bool "Swap pitch/roll (JY61P mounted rotated 90 deg)"
         default n

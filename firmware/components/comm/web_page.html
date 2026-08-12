@@ -202,6 +202,30 @@
 <summary>工程控制与诊断（电机、姿态、校准、原始命令）</summary>
 
 <div class="card">
+  <div class="mhead"><span class="mname">高频标定采集</span><span class="pill" id="capturePill">空</span></div>
+  <div class="row">
+    <select id="captureLabel" class="grow" aria-label="标定动作类型">
+      <option value="neutral">中立静止</option>
+      <option value="normal-lift">正常抬腿回位</option>
+      <option value="small-lift">微小抬腿</option>
+      <option value="fast-lift">快速抬腿</option>
+      <option value="lateral-offset">明显横向偏移</option>
+      <option value="strap-loose">绑带松动</option>
+      <option value="controlled-instability">受控失衡</option>
+    </select>
+  </div>
+  <div class="row" style="margin-top:10px;">
+    <button class="btn ok grow" id="captureStart">开始采集</button>
+    <button class="btn warn grow" id="captureStop">停止</button>
+    <button class="btn ghost grow" id="captureExport">导出 CSV</button>
+    <button class="btn danger" id="captureClear">清除</button>
+  </div>
+  <div class="mpulse" id="captureInfo">等待 JY61P · 0/0 样本</div>
+  <div class="notice warn">采集保存高频 IMU 和控制输出到 RAM，停止后再导出，重启即丢失。禁止为采集“跌倒”而让佩戴者真实跌倒；受控失衡必须在专业人员、独立断电和保护条件下进行。
+  </div>
+</div>
+
+<div class="card">
   <div class="mhead"><span class="mname">姿态</span><span class="pill" id="stabPill">稳定 关</span></div>
   <div class="row">
     <div class="axis">
@@ -342,6 +366,7 @@ let lastSavedSessionKey = null;
 const HISTORY_KEY="alwaysbea_training_history_v1";
 const HISTORY_IGNORE_KEY="alwaysbea_training_ignored_session_v1";
 const HISTORY_MAX=100;
+let captureStatus=null;
 
 /* ---------- 命令发送 ---------- */
 function sendCmd(cmd){
@@ -525,6 +550,50 @@ document.getElementById("clearHistory").addEventListener("click",()=>{
       localStorage.removeItem(HISTORY_KEY);renderHistory();
     }catch(e){addLog("清空训练历史","本地存储不可用",true);}
   }
+});
+
+/* ---------- 高频标定采集 ---------- */
+const CAPTURE_STATE_CN={empty:"空",recording:"采集中",ready:"可导出"};
+function renderCapture(c){
+  captureStatus=c;
+  const labelEl=document.getElementById("captureLabel");
+  if(c.label&&Array.from(labelEl.options).some(o=>o.value===c.label))labelEl.value=c.label;
+  document.getElementById("capturePill").textContent=CAPTURE_STATE_CN[c.state]||c.state;
+  document.getElementById("captureInfo").textContent=(c.state==="recording"?"正在记录":"RAM 采集")+" · "+
+    (c.label?c.label+" · ":"")+c.samples+"/"+c.capacity+" 样本 · "+(c.duration_ms/1000).toFixed(1)+" s · "+c.rate_hz.toFixed(1)+" Hz"+
+    (c.full?" · 已满":"");
+  document.getElementById("captureStart").disabled=c.state!=="empty";
+  document.getElementById("captureStop").disabled=c.state!=="recording";
+  document.getElementById("captureExport").disabled=!c.download_ready;
+  document.getElementById("captureClear").disabled=c.state==="recording";
+  labelEl.disabled=c.state!=="empty";
+}
+function pollCapture(){
+  fetch("/api/capture/status").then(r=>r.json()).then(renderCapture).catch(()=>{});
+}
+function captureFileName(labelOverride){
+  const label=labelOverride||document.getElementById("captureLabel").value;
+  const d=new Date(),stamp=d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+
+    String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0")+String(d.getSeconds()).padStart(2,"0");
+  return "alwaysbea-capture-"+label+"-"+stamp+".csv";
+}
+document.getElementById("captureStart").addEventListener("click",()=>sendCmd("CAPTURE START "+document.getElementById("captureLabel").value).then(pollCapture).catch(()=>{}));
+document.getElementById("captureStop").addEventListener("click",()=>sendCmd("CAPTURE STOP").then(pollCapture).catch(()=>{}));
+document.getElementById("captureClear").addEventListener("click",()=>sendCmd("CAPTURE CLEAR").then(pollCapture).catch(()=>{}));
+document.getElementById("captureExport").addEventListener("click",async()=>{
+  try{
+    const r=await fetch("/api/capture.csv",{cache:"no-store"});
+    if(!r.ok)throw new Error(await r.text());
+    const raw=await r.text(),label=(captureStatus&&captureStatus.label)||document.getElementById("captureLabel").value;
+    const data="\ufeff# label="+label+"\r\n# exported_at="+new Date().toISOString()+"\r\n"+raw.replace(/^\ufeff/,"");
+    const name=captureFileName(label),mime="text/csv;charset=utf-8";
+    if(window.AlwaysbeABridge&&typeof window.AlwaysbeABridge.saveText==="function"){
+      window.AlwaysbeABridge.saveText(name,mime,data);
+    }else{
+      const url=URL.createObjectURL(new Blob([data],{type:mime}));
+      const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+  }catch(e){addLog("导出标定数据","ERR:"+e,true);}
 });
 
 function setMotor(n, speed){  /* speed: -1000..1000，负值固件会钳到 0 */
@@ -940,8 +1009,10 @@ async function restoreProfile(){
 }
 setInterval(poll, 500);
 setInterval(pollTraining, 500);
+setInterval(pollCapture, 1000);
 poll();
 pollTraining();
+pollCapture();
 renderHistory();
 setTimeout(restoreProfile,800);
 animate3d();

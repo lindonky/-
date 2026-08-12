@@ -4,6 +4,7 @@
 
 #include "attitude_control.h"
 #include "bsp.h"
+#include "calibration_capture.h"
 #include "control_mode.h"
 #include "driver/imu_uart.h"
 #include "driver/jy61p.h"
@@ -126,6 +127,31 @@ static void imu_rx_task(void *arg)
                 .controlCap = (float)control_mode_cap(),
             };
             training_session_feed(&sample);
+            const calibration_capture_sample_t captureSample = {
+                .nowMs = d.timestampMs,
+                .sequence = d.sequence,
+                .imuValid = true,
+                .estop = control_is_estop(),
+                .stabilizeEnabled = s_status.enabled,
+                .mode = (int)control_mode_get(),
+                .rollDeg = s_status.rollDeg,
+                .pitchDeg = s_status.pitchDeg,
+                .yawDeg = s_status.yawDeg,
+                .motionDeg = trainPitch,
+                .lateralDeg = trainRoll,
+                .gyroXDps = d.gyroXDps,
+                .gyroYDps = d.gyroYDps,
+                .gyroZDps = d.gyroZDps,
+                .accelXG = d.accelXG,
+                .accelYG = d.accelYG,
+                .accelZG = d.accelZG,
+                .pitchOut = s_status.pitchOut,
+                .rollOut = s_status.rollOut,
+                .t1PulseUs = thruster_get_current_pulse(0),
+                .t2PulseUs = thruster_get_current_pulse(1),
+                .t3PulseUs = thruster_get_current_pulse(2),
+            };
+            calibration_capture_feed(&captureSample);
         }
 
         /* 诊断计数（轻量，仅读） */

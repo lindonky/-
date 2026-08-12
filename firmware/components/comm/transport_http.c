@@ -3,6 +3,7 @@
  */
 #include "transport_http.h"
 
+#include "calibration_capture.h"
 #include "cmd_parser.h"
 #include "stabilize.h"
 #include "thruster.h"
@@ -154,6 +155,104 @@ static esp_err_t handle_training_status(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* --- 短时高频标定采集：RAM 状态与停止后流式 CSV --- */
+static esp_err_t handle_capture_status(httpd_req_t *req)
+{
+    calibration_capture_status_t cs;
+    const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000U);
+    calibration_capture_get_status(&cs, now);
+    char buf[256];
+    const int len = snprintf(
+        buf, sizeof(buf),
+        "{\"state\":\"%s\",\"label\":\"%s\",\"samples\":%lu,\"capacity\":%lu,"
+        "\"duration_ms\":%lu,\"rate_hz\":%.1f,\"full\":%d,\"download_ready\":%d}",
+        calibration_capture_state_name(cs.state),
+        cs.label,
+        (unsigned long)cs.sampleCount, (unsigned long)cs.capacity,
+        (unsigned long)cs.durationMs, cs.sampleRateHz, (int)cs.full,
+        (int)(cs.state == CAPTURE_STATE_READY && cs.sampleCount > 0U));
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, len);
+    return ESP_OK;
+}
+
+static esp_err_t capture_send_chunk(httpd_req_t *req, const char *data,
+                                    int len, size_t capacity)
+{
+    if (len <= 0 || (size_t)len >= capacity) return ESP_FAIL;
+    return httpd_resp_send_chunk(req, data, (size_t)len);
+}
+
+static esp_err_t handle_capture_csv(httpd_req_t *req)
+{
+    calibration_capture_status_t cs;
+    if (!calibration_capture_begin_export(&cs)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "text/plain; charset=utf-8");
+        httpd_resp_sendstr(req, "capture is not ready; stop recording first");
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "text/csv; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Content-Disposition",
+                       "attachment; filename=alwaysbea-calibration-capture.csv");
+
+    esp_err_t err = ESP_OK;
+    char row[384];
+    int len = snprintf(row, sizeof(row),
+                       "\xEF\xBB\xBF# schema=alwaysbea-calibration-capture-v1\r\n"
+                       "# device_boot=%lu,samples=%lu,duration_ms=%lu,rate_hz=%.1f,full=%d\r\n"
+                       "# label=%s\r\n"
+                       "# angle=deg,gyro=deg/s,accel=g,control=-1000..1000\r\n",
+                       (unsigned long)s_boot_id, (unsigned long)cs.sampleCount,
+                       (unsigned long)cs.durationMs, cs.sampleRateHz, (int)cs.full,
+                       cs.label);
+    if (capture_send_chunk(req, row, len, sizeof(row)) != ESP_OK) err = ESP_FAIL;
+
+    static const char header[] =
+        "timestamp_ms,elapsed_ms,sequence,roll_deg,pitch_deg,yaw_deg,motion_deg,lateral_deg,"
+        "gx_dps,gy_dps,gz_dps,ax_g,ay_g,az_g,pitch_out,roll_out,"
+        "t1_pulse_us,t2_pulse_us,t3_pulse_us,mode,imu_valid,estop,stabilize\r\n";
+    if (err == ESP_OK && httpd_resp_send_chunk(req, header, sizeof(header) - 1U) != ESP_OK) {
+        err = ESP_FAIL;
+    }
+
+    for (uint32_t i = 0U; err == ESP_OK && i < cs.sampleCount; ++i) {
+        calibration_capture_record_t r;
+        if (!calibration_capture_get_record(i, &r)) {
+            err = ESP_FAIL;
+            break;
+        }
+        len = snprintf(
+            row, sizeof(row),
+            "%lu,%lu,%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,"
+            "%.3f,%.3f,%.3f,%d,%d,%u,%u,%u,%d,%d,%d,%d\r\n",
+            (unsigned long)r.timestampMs,
+            (unsigned long)(r.timestampMs - cs.startedMs),
+            (unsigned long)r.sequence,
+            (double)r.rollCentiDeg / 100.0, (double)r.pitchCentiDeg / 100.0,
+            (double)r.yawCentiDeg / 100.0, (double)r.motionCentiDeg / 100.0,
+            (double)r.lateralCentiDeg / 100.0,
+            (double)r.gyroXDeciDps / 10.0, (double)r.gyroYDeciDps / 10.0,
+            (double)r.gyroZDeciDps / 10.0,
+            (double)r.accelXMilliG / 1000.0, (double)r.accelYMilliG / 1000.0,
+            (double)r.accelZMilliG / 1000.0,
+            (int)r.pitchOut, (int)r.rollOut,
+            (unsigned int)r.t1PulseUs, (unsigned int)r.t2PulseUs,
+            (unsigned int)r.t3PulseUs, (int)r.mode,
+            (int)((r.flags & CAPTURE_FLAG_IMU_VALID) != 0U),
+            (int)((r.flags & CAPTURE_FLAG_ESTOP) != 0U),
+            (int)((r.flags & CAPTURE_FLAG_STABILIZE) != 0U));
+        if (capture_send_chunk(req, row, len, sizeof(row)) != ESP_OK) err = ESP_FAIL;
+    }
+
+    if (err == ESP_OK) httpd_resp_send_chunk(req, NULL, 0U);
+    calibration_capture_end_export();
+    return err;
+}
+
 /* --- 指令：正文为协议文本，回传 XX_OK/XX_ERR --- */
 static esp_err_t handle_cmd(httpd_req_t *req)
 {
@@ -247,11 +346,15 @@ static void http_server_init(void)
     static const httpd_uri_t uri_leg    = { .uri = "/leg.js",     .method = HTTP_GET,  .handler = handle_leg_model,.user_ctx = NULL };
     static const httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET,  .handler = handle_status,   .user_ctx = NULL };
     static const httpd_uri_t uri_train  = { .uri = "/api/training/status", .method = HTTP_GET, .handler = handle_training_status, .user_ctx = NULL };
+    static const httpd_uri_t uri_cap_status = { .uri = "/api/capture/status", .method = HTTP_GET, .handler = handle_capture_status, .user_ctx = NULL };
+    static const httpd_uri_t uri_cap_csv = { .uri = "/api/capture.csv", .method = HTTP_GET, .handler = handle_capture_csv, .user_ctx = NULL };
     static const httpd_uri_t uri_cmd    = { .uri = "/api/cmd",    .method = HTTP_POST, .handler = handle_cmd,      .user_ctx = NULL };
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_root);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_leg);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_status);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_train);
+    httpd_register_uri_handler(server, (httpd_uri_t *)&uri_cap_status);
+    httpd_register_uri_handler(server, (httpd_uri_t *)&uri_cap_csv);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_cmd);
     ESP_LOGI(TAG, "web UI at http://192.168.4.1");
 }
