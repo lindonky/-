@@ -39,6 +39,11 @@ class DeviceState:
         self.session_started = 0.0
         self.accumulated_ms = 0
         self.last_step_count = 0
+        self.goal_enabled = False
+        self.goal_rom_min_deg = 15.0
+        self.goal_rom_max_deg = 45.0
+        self.goal_cadence_spm = 30.0
+        self.goal_cadence_tolerance_spm = 4.5
         self.capture_state = "empty"
         self.capture_label = "neutral"
         self.capture_started = 0.0
@@ -64,6 +69,17 @@ class DeviceState:
         completed = steps > 0
         shank_cm = self.shank_override_cm or self.height_cm * 0.2386
         rom = 29.6 if completed else 0.0
+        cadence = 33.0 if completed else 0.0
+        quality_flags = 0
+        if completed and self.goal_enabled:
+            if rom < self.goal_rom_min_deg:
+                quality_flags |= 1
+            if rom > self.goal_rom_max_deg:
+                quality_flags |= 2
+            if cadence < self.goal_cadence_spm - self.goal_cadence_tolerance_spm:
+                quality_flags |= 128
+            if cadence > self.goal_cadence_spm + self.goal_cadence_tolerance_spm:
+                quality_flags |= 256
         step_cm = 2.0 * shank_cm * math.sin(math.radians(rom / 2.0)) if completed else 0.0
         phase = "settled"
         if self.training_state == "running":
@@ -86,7 +102,7 @@ class DeviceState:
             "cycle_s": 1.8 if completed else 0.0,
             "lift_s": 0.8 if completed else 0.0,
             "return_s": 1.0 if completed else 0.0,
-            "cadence_spm": 33.0 if completed else 0.0,
+            "cadence_spm": cadence,
             "lateral_deg": 2.4 if completed else 0.0,
             "return_error_deg": 1.2 if completed else 0.0,
             "height_cm": self.height_cm,
@@ -98,7 +114,12 @@ class DeviceState:
             "intervention_mean_pct": 12.0 if completed else 0.0,
             "intervention_peak_pct": 26.0 if completed else 0.0,
             "correction_load_index": 8.5 if completed else 0.0,
-            "quality_flags": 0,
+            "quality_flags": quality_flags,
+            "goal_enabled": self.goal_enabled,
+            "goal_rom_min_deg": self.goal_rom_min_deg,
+            "goal_rom_max_deg": self.goal_rom_max_deg,
+            "goal_cadence_spm": self.goal_cadence_spm,
+            "goal_cadence_tolerance_spm": self.goal_cadence_tolerance_spm,
             "fall_stage": 0,
             "fall_events": 0,
             "accel_g": 1.01,
@@ -212,6 +233,27 @@ class DeviceState:
                 return "TRAIN_ERR:training_active"
             self.shank_override_cm = float(parts[2])
             return "TRAIN_OK:shank"
+        if upper[:2] == ["TRAIN", "GOAL"]:
+            if training_locked:
+                return "TRAIN_ERR:training_active"
+            if len(parts) == 3 and upper[2] == "OFF":
+                self.goal_enabled = False
+                return "TRAIN_OK:goal=off"
+            if len(parts) != 5:
+                return "TRAIN_ERR:goal_range"
+            rom_min = float(parts[2])
+            rom_max = float(parts[3])
+            cadence = float(parts[4])
+            if rom_min < 8.0 or rom_max > 60.0 or rom_max - rom_min < 2.0:
+                return "TRAIN_ERR:goal_range"
+            if cadence < 5.0 or cadence > 75.0:
+                return "TRAIN_ERR:goal_range"
+            self.goal_enabled = True
+            self.goal_rom_min_deg = rom_min
+            self.goal_rom_max_deg = rom_max
+            self.goal_cadence_spm = cadence
+            self.goal_cadence_tolerance_spm = max(3.0, cadence * 0.15)
+            return "TRAIN_OK:goal"
         if upper[:2] == ["TRAIN", "START"]:
             if self.estop:
                 return "TRAIN_ERR:estop"

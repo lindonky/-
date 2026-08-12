@@ -125,6 +125,8 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         "\"cycle_s\":%.2f,\"lift_s\":%.2f,\"return_s\":%.2f,\"cadence_spm\":%.1f,"
         "\"lateral_deg\":%.1f,\"return_error_deg\":%.1f,"
         "\"height_cm\":%.1f,\"leg_cm_est\":%.1f,\"shank_cm\":%.1f,\"shank_measured\":%d,"
+        "\"goal_enabled\":%d,\"goal_rom_min_deg\":%.1f,\"goal_rom_max_deg\":%.1f,"
+        "\"goal_cadence_spm\":%.1f,\"goal_cadence_tolerance_spm\":%.1f,"
         "\"step_cm_est\":%.1f,\"step_avg_cm_est\":%.1f,"
         "\"intervention_mean_pct\":%.1f,\"intervention_peak_pct\":%.1f,\"correction_load_index\":%.1f,"
         "\"quality_flags\":%lu,\"fall_stage\":%u,\"fall_events\":%lu,"
@@ -140,6 +142,8 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         ts.lastCycleSec, ts.lastLiftSec, ts.lastReturnSec, ts.cadenceSpm,
         ts.lastLateralDeg, ts.lastReturnErrorDeg,
         ts.heightCm, ts.estimatedLegCm, ts.shankLengthCm, (int)ts.shankLengthMeasured,
+        (int)ts.goalEnabled, ts.goalRomMinDeg, ts.goalRomMaxDeg,
+        ts.goalCadenceSpm, ts.goalCadenceToleranceSpm,
         ts.lastEstimatedStepCm, ts.averageEstimatedStepCm,
         ts.interventionMeanPct, ts.interventionPeakPct, ts.correctionLoadIndex,
         (unsigned long)ts.lastQualityFlags, (unsigned int)ts.fallStage,

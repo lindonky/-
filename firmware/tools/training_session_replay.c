@@ -72,12 +72,25 @@ static training_status_t status(void)
 int main(void)
 {
     training_session_init();
+    training_status_t s = status();
+    assert(!s.goalEnabled);
+    assert(fabsf(s.goalRomMinDeg - 15.0f) < 0.1f);
+    assert(fabsf(s.goalRomMaxDeg - 45.0f) < 0.1f);
+    assert(!training_session_set_goal(true, 7.0f, 30.0f, 50.0f));
+    assert(!training_session_set_goal(true, 20.0f, 61.0f, 50.0f));
+    assert(!training_session_set_goal(true, 20.0f, 21.0f, 50.0f));
+    assert(!training_session_set_goal(true, 20.0f, 30.0f, 80.0f));
+    assert(training_session_set_goal(true, 20.0f, 30.0f, 50.0f));
     assert(training_session_set_height(170.0f));
     assert(training_session_start(s_now, 0.0f, 0.0f, 1, true, false));
+    assert(!training_session_set_goal(false, 0.0f, 0.0f, 0.0f));
 
     hold(0.0f, 0.0f, 300U);
     cycle(25.0f, 4.0f);
-    training_status_t s = status();
+    s = status();
+    assert(s.goalEnabled);
+    assert(fabsf(s.goalCadenceSpm - 50.0f) < 0.1f);
+    assert(fabsf(s.goalCadenceToleranceSpm - 7.5f) < 0.1f);
     assert(s.steps == 1U);
     assert(s.qualifiedSteps == 1U);
     assert(s.lastRomDeg > 24.0f && s.lastRomDeg < 26.0f);
@@ -102,6 +115,17 @@ int main(void)
     s = status();
     assert(s.steps == 3U);
     assert((s.lastQualityFlags & TRAIN_QUALITY_RETURN) != 0U);
+
+    /* A new optional target is atomic, survives session start and contributes
+     * cadence-specific quality flags without weakening hard safety limits. */
+    assert(training_session_stop(s_now));
+    assert(training_session_set_goal(true, 20.0f, 30.0f, 20.0f));
+    assert(training_session_start(s_now, 0.0f, 0.0f, 1, true, false));
+    hold(0.0f, 0.0f, 300U);
+    cycle(25.0f, 0.0f);
+    s = status();
+    assert(s.steps == 1U);
+    assert((s.lastQualityFlags & TRAIN_QUALITY_CADENCE_HIGH) != 0U);
 
     /* A lone impact without a sustained changed posture must not confirm a fall. */
     feed(0.0f, 0.0f, 150.0f, 2.5f);

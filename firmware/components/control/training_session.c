@@ -46,6 +46,12 @@
 #define TRAIN_CYCLE_MAX_MS           ((uint32_t)CONFIG_TRAIN_CYCLE_MAX_MS)
 #define TRAIN_SETTLE_HOLD_MS         200U
 #define TRAIN_LATERAL_TARGET_DEG     ((float)CONFIG_TRAIN_LATERAL_MAX_DEG)
+#define TRAIN_GOAL_ROM_SPAN_MIN_DEG  2.0f
+#define TRAIN_GOAL_CADENCE_MIN_SPM   5.0f
+#define TRAIN_GOAL_CADENCE_MAX_SPM   75.0f
+#define TRAIN_GOAL_CADENCE_DEFAULT   30.0f
+#define TRAIN_GOAL_CADENCE_TOL_PCT   0.15f
+#define TRAIN_GOAL_CADENCE_TOL_MIN   3.0f
 
 /* 初始跌倒候选阈值。传感器位于小腿且工作于水下，必须用实测数据重标定。
  * 只有“低加速度/冲击 + 高角速度 + 大姿态变化 + 随后稳定”组合才会确认。 */
@@ -140,6 +146,17 @@ static void update_body_estimates_locked(void)
         : 0.0f;
 }
 
+static void set_default_goal_locked(void)
+{
+    s_train.pub.goalEnabled = false;
+    s_train.pub.goalRomMinDeg = TRAIN_TARGET_ROM_MIN_DEG;
+    s_train.pub.goalRomMaxDeg = TRAIN_TARGET_ROM_MAX_DEG;
+    s_train.pub.goalCadenceSpm = TRAIN_GOAL_CADENCE_DEFAULT;
+    s_train.pub.goalCadenceToleranceSpm =
+        maxf(TRAIN_GOAL_CADENCE_TOL_MIN,
+             TRAIN_GOAL_CADENCE_DEFAULT * TRAIN_GOAL_CADENCE_TOL_PCT);
+}
+
 static void clear_cycle_locked(void)
 {
     s_train.pub.phase = TRAIN_PHASE_SETTLED;
@@ -178,16 +195,40 @@ static void finish_cycle_locked(const training_sample_t *s, float excursion,
     const float rom = s_train.peakExcursionDeg;
     const float meanSpeed = (cycleMs > 0U) ? (2000.0f * rom / (float)cycleMs) : 0.0f;
     const float returnError = excursion;
+    float instantCadence = 0.0f;
+    if (s_train.lastStepMs != 0U && endMs > s_train.lastStepMs) {
+        instantCadence = 60000.0f / (float)(endMs - s_train.lastStepMs);
+    } else if (cycleMs > 0U) {
+        instantCadence = 60000.0f / (float)cycleMs;
+    }
+    if (instantCadence > 0.0f) {
+        s_train.pub.cadenceSpm = (s_train.pub.cadenceSpm == 0.0f)
+                                     ? instantCadence
+                                     : (0.75f * s_train.pub.cadenceSpm +
+                                        0.25f * instantCadence);
+    }
     uint32_t quality = 0U;
 
-    if (rom < TRAIN_TARGET_ROM_MIN_DEG) quality |= TRAIN_QUALITY_ROM_LOW;
-    if (rom > TRAIN_TARGET_ROM_MAX_DEG) quality |= TRAIN_QUALITY_ROM_HIGH;
+    const float romMin = s_train.pub.goalEnabled
+                             ? s_train.pub.goalRomMinDeg : TRAIN_TARGET_ROM_MIN_DEG;
+    const float romMax = s_train.pub.goalEnabled
+                             ? s_train.pub.goalRomMaxDeg : TRAIN_TARGET_ROM_MAX_DEG;
+    if (rom < romMin) quality |= TRAIN_QUALITY_ROM_LOW;
+    if (rom > romMax) quality |= TRAIN_QUALITY_ROM_HIGH;
     if (meanSpeed < TRAIN_SPEED_MIN_DPS) quality |= TRAIN_QUALITY_SPEED_LOW;
     if (meanSpeed > TRAIN_SPEED_MAX_DPS) quality |= TRAIN_QUALITY_SPEED_HIGH;
     if (s_train.peakLateralDeg > TRAIN_LATERAL_TARGET_DEG) quality |= TRAIN_QUALITY_LATERAL;
     if (returnError > TRAIN_RETURN_WINDOW_DEG) quality |= TRAIN_QUALITY_RETURN;
     if (cycleMs < TRAIN_CYCLE_MIN_MS || cycleMs > TRAIN_CYCLE_MAX_MS) {
         quality |= TRAIN_QUALITY_CYCLE_TIME;
+    }
+    if (s_train.pub.goalEnabled && instantCadence > 0.0f) {
+        const float cadenceLow = s_train.pub.goalCadenceSpm -
+                                 s_train.pub.goalCadenceToleranceSpm;
+        const float cadenceHigh = s_train.pub.goalCadenceSpm +
+                                  s_train.pub.goalCadenceToleranceSpm;
+        if (instantCadence < cadenceLow) quality |= TRAIN_QUALITY_CADENCE_LOW;
+        if (instantCadence > cadenceHigh) quality |= TRAIN_QUALITY_CADENCE_HIGH;
     }
 
     s_train.pub.steps++;
@@ -204,15 +245,6 @@ static void finish_cycle_locked(const training_sample_t *s, float excursion,
     s_train.pub.averageRomDeg += (rom - s_train.pub.averageRomDeg) / n;
     update_body_estimates_locked();
     s_train.pub.qualifiedPct = 100.0f * (float)s_train.pub.qualifiedSteps / n;
-    if (s_train.lastStepMs != 0U && endMs > s_train.lastStepMs) {
-        const float intervalSec = (float)(endMs - s_train.lastStepMs) / 1000.0f;
-        const float instantCadence = 60.0f / intervalSec;
-        s_train.pub.cadenceSpm = (s_train.pub.cadenceSpm == 0.0f)
-                                    ? instantCadence
-                                    : (0.75f * s_train.pub.cadenceSpm + 0.25f * instantCadence);
-    } else if (cycleMs > 0U) {
-        s_train.pub.cadenceSpm = 60000.0f / (float)cycleMs;
-    }
     s_train.lastStepMs = endMs;
     set_event_locked((quality == 0U) ? "step_qualified" : "step_completed");
     (void)s;
@@ -293,6 +325,7 @@ void training_session_init(void)
     s_train.pub.state = TRAIN_STATE_IDLE;
     s_train.pub.phase = TRAIN_PHASE_SETTLED;
     s_train.nextSessionId = 1U;
+    set_default_goal_locked();
     update_body_estimates_locked();
     set_event_locked("ready");
     TRAIN_UNLOCK();
@@ -310,10 +343,20 @@ bool training_session_start(uint32_t nowMs, float pitchDeg, float rollDeg,
     }
     const float height = s_train.pub.heightCm;
     const float measuredShank = s_train.measuredShankCm;
+    const bool goalEnabled = s_train.pub.goalEnabled;
+    const float goalRomMin = s_train.pub.goalRomMinDeg;
+    const float goalRomMax = s_train.pub.goalRomMaxDeg;
+    const float goalCadence = s_train.pub.goalCadenceSpm;
+    const float goalCadenceTolerance = s_train.pub.goalCadenceToleranceSpm;
     const uint32_t nextId = s_train.nextSessionId;
     memset(&s_train, 0, sizeof(s_train));
     s_train.pub.heightCm = height;
     s_train.measuredShankCm = measuredShank;
+    s_train.pub.goalEnabled = goalEnabled;
+    s_train.pub.goalRomMinDeg = goalRomMin;
+    s_train.pub.goalRomMaxDeg = goalRomMax;
+    s_train.pub.goalCadenceSpm = goalCadence;
+    s_train.pub.goalCadenceToleranceSpm = goalCadenceTolerance;
     s_train.nextSessionId = nextId + 1U;
     s_train.pub.sessionId = nextId;
     s_train.pub.state = TRAIN_STATE_RUNNING;
@@ -392,10 +435,20 @@ void training_session_reset(void)
     TRAIN_LOCK();
     const float height = s_train.pub.heightCm;
     const float measuredShank = s_train.measuredShankCm;
+    const bool goalEnabled = s_train.pub.goalEnabled;
+    const float goalRomMin = s_train.pub.goalRomMinDeg;
+    const float goalRomMax = s_train.pub.goalRomMaxDeg;
+    const float goalCadence = s_train.pub.goalCadenceSpm;
+    const float goalCadenceTolerance = s_train.pub.goalCadenceToleranceSpm;
     const uint32_t nextId = s_train.nextSessionId;
     memset(&s_train, 0, sizeof(s_train));
     s_train.pub.heightCm = height;
     s_train.measuredShankCm = measuredShank;
+    s_train.pub.goalEnabled = goalEnabled;
+    s_train.pub.goalRomMinDeg = goalRomMin;
+    s_train.pub.goalRomMaxDeg = goalRomMax;
+    s_train.pub.goalCadenceSpm = goalCadence;
+    s_train.pub.goalCadenceToleranceSpm = goalCadenceTolerance;
     s_train.nextSessionId = nextId;
     s_train.pub.state = TRAIN_STATE_IDLE;
     s_train.pub.phase = TRAIN_PHASE_SETTLED;
@@ -428,6 +481,41 @@ bool training_session_set_shank_length(float shankLengthCm)
     set_event_locked("profile_updated");
     TRAIN_UNLOCK();
     return true;
+}
+
+bool training_session_set_goal(bool enabled, float romMinDeg, float romMaxDeg,
+                               float cadenceSpm)
+{
+    if (enabled &&
+        (!isfinite(romMinDeg) || !isfinite(romMaxDeg) || !isfinite(cadenceSpm) ||
+         romMinDeg < TRAIN_LIFT_START_DEG ||
+         romMaxDeg > TRAIN_ABSOLUTE_ROM_MAX_DEG ||
+         (romMaxDeg - romMinDeg) < TRAIN_GOAL_ROM_SPAN_MIN_DEG ||
+         cadenceSpm < TRAIN_GOAL_CADENCE_MIN_SPM ||
+         cadenceSpm > TRAIN_GOAL_CADENCE_MAX_SPM)) {
+        return false;
+    }
+
+    bool ok = false;
+    TRAIN_LOCK();
+    if (s_train.pub.state != TRAIN_STATE_RUNNING &&
+        s_train.pub.state != TRAIN_STATE_PAUSED) {
+        if (enabled) {
+            s_train.pub.goalEnabled = true;
+            s_train.pub.goalRomMinDeg = romMinDeg;
+            s_train.pub.goalRomMaxDeg = romMaxDeg;
+            s_train.pub.goalCadenceSpm = cadenceSpm;
+            s_train.pub.goalCadenceToleranceSpm =
+                maxf(TRAIN_GOAL_CADENCE_TOL_MIN,
+                     cadenceSpm * TRAIN_GOAL_CADENCE_TOL_PCT);
+        } else {
+            set_default_goal_locked();
+        }
+        set_event_locked(enabled ? "goal_updated" : "goal_disabled");
+        ok = true;
+    }
+    TRAIN_UNLOCK();
+    return ok;
 }
 
 void training_session_feed(const training_sample_t *s)

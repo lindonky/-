@@ -31,6 +31,8 @@ enum {
     TRAIN_QUALITY_LATERAL       = (1U << 4),
     TRAIN_QUALITY_RETURN        = (1U << 5),
     TRAIN_QUALITY_CYCLE_TIME    = (1U << 6),
+    TRAIN_QUALITY_CADENCE_LOW   = (1U << 7),
+    TRAIN_QUALITY_CADENCE_HIGH  = (1U << 8),
 };
 
 typedef struct {
@@ -70,6 +72,13 @@ typedef struct {
     float estimatedLegCm;
     float shankLengthCm;
     bool shankLengthMeasured;
+
+    /* 可选训练目标。仅改变动作评价，不改变硬角度限位或跌倒保护。 */
+    bool goalEnabled;
+    float goalRomMinDeg;
+    float goalRomMaxDeg;
+    float goalCadenceSpm;
+    float goalCadenceToleranceSpm;
 
     /* 本周期/累计指标 */
     float currentExcursionDeg;
@@ -111,6 +120,8 @@ void training_session_reset(void);
 
 bool training_session_set_height(float heightCm);
 bool training_session_set_shank_length(float shankLengthCm); /* 0=恢复身高估算 */
+bool training_session_set_goal(bool enabled, float romMinDeg, float romMaxDeg,
+                               float cadenceSpm);
 
 void training_session_feed(const training_sample_t *sample);
 void training_session_get_status(training_status_t *out, uint32_t nowMs);

@@ -76,6 +76,7 @@ static void handle_help(const cmd_transport_t *t)
     send_line(t, "  TRAIN START|PAUSE|RESUME|STOP|RESET   training session");
     send_line(t, "  TRAIN HEIGHT <cm>  set body height 100..230cm");
     send_line(t, "  TRAIN SHANK <cm>   measured shank 20..70cm; 0=estimate");
+    send_line(t, "  TRAIN GOAL <rom_min> <rom_max> <spm>|OFF   optional session target");
     send_line(t, "  CAPTURE START [label]|STOP|CLEAR   temporary high-rate IMU capture");
     send_line(t, "  PULSE <n> <us>     direct pulse 800..2200us (debug)");
     send_line(t, "  STATUS             show current/target pulses");
@@ -126,12 +127,13 @@ static void handle_cmd(const cmd_transport_t *t, const char *line)
         char sub[16];
         training_session_get_status(&ts, now);
         if (sscanf(line, "%*s %15s", sub) != 1) {
-            send_line(t, "TRAIN:%s phase=%s id=%lu time=%lus steps=%lu good=%lu score=%.0f%%",
+            send_line(t, "TRAIN:%s phase=%s id=%lu time=%lus steps=%lu good=%lu score=%.0f%% goal=%d rom=%.0f-%.0f cadence=%.0f",
                       training_state_name(ts.state), training_phase_name(ts.phase),
                       (unsigned long)ts.sessionId,
                       (unsigned long)(ts.elapsedMs / 1000U),
                       (unsigned long)ts.steps, (unsigned long)ts.qualifiedSteps,
-                      ts.qualifiedPct);
+                      ts.qualifiedPct, (int)ts.goalEnabled,
+                      ts.goalRomMinDeg, ts.goalRomMaxDeg, ts.goalCadenceSpm);
         } else if (strcasecmp(sub, "START") == 0) {
             if (control_is_estop()) {
                 send_line(t, "TRAIN_ERR:estop");
@@ -182,6 +184,24 @@ static void handle_cmd(const cmd_transport_t *t, const char *line)
                 send_line(t, "TRAIN_OK:shank=%.1fcm", shank);
             } else {
                 send_line(t, "TRAIN_ERR:shank_range_20_70_or_0");
+            }
+        } else if (strcasecmp(sub, "GOAL") == 0) {
+            char arg[8];
+            float romMin = 0.0f, romMax = 0.0f, cadence = 0.0f;
+            if (training_controls_locked()) {
+                send_line(t, "TRAIN_ERR:session_active");
+            } else if (sscanf(line, "%*s %*s %7s", arg) == 1 &&
+                       strcasecmp(arg, "OFF") == 0) {
+                send_line(t, training_session_set_goal(false, 0.0f, 0.0f, 0.0f)
+                                 ? "TRAIN_OK:goal=off" : "TRAIN_ERR:state");
+            } else if (sscanf(line, "%*s %*s %f %f %f",
+                              &romMin, &romMax, &cadence) != 3) {
+                send_line(t, "TRAIN_ERR:goal_arg");
+            } else if (training_session_set_goal(true, romMin, romMax, cadence)) {
+                send_line(t, "TRAIN_OK:goal rom=%.1f-%.1fdeg cadence=%.1fspm",
+                          romMin, romMax, cadence);
+            } else {
+                send_line(t, "TRAIN_ERR:goal_range_rom_8_60_span2_cadence_5_75");
             }
         } else {
             send_line(t, "TRAIN_ERR:arg");

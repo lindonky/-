@@ -108,6 +108,8 @@ TRAIN
 TRAIN START|PAUSE|RESUME|STOP|RESET
 TRAIN HEIGHT <100..230 cm>
 TRAIN SHANK <20..70 cm>   # 0 恢复身高比例估算
+TRAIN GOAL <rom_min> <rom_max> <spm>   # 可选目标：ROM 8..60°，步频 5..75
+TRAIN GOAL OFF
 CAPTURE START [label]|STOP|CLEAR
 PULSE <n> <us>
 CAL
@@ -117,6 +119,8 @@ CAL
 主动模式强制中间推进器保持 1500 μs；`T2`、`TALL`、`JOY` 和 `PULSE`
 均不能绕过该限制。计步在 ESP32 高频 IMU 路径中完成，一步定义为单腿一次
 完整抬起—回位。身高/小腿长仅用于等效步长估算。
+
+训练目标只能在会话未运行时修改。启用后，ROM 目标范围和目标步频会参与本步工程达标评价；步频允许带为目标值的 ±15%，最少 ±3 步/分。目标不会改变 60° ROM 硬限位、横向保护或跌倒检测。网页会同时显示目标值和完成第一步后的实际值，并把目标快照写入本地训练报告。
 
 训练状态响应包含 `algo`、`device_boot` 和当前 `limits`，便于导出后追溯算法版本、区分重启后的会话 ID，并保留当次工程阈值。内嵌页面在手机 WebView 的本地存储中最多保留 100 次已结束会话，可导出 JSON/CSV；清除 App 数据会同时删除这些历史。
 
