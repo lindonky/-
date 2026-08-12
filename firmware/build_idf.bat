@@ -4,6 +4,9 @@ setlocal
 rem Git Bash may inject these variables; ESP-IDF's Windows launcher rejects them.
 set "MSYSTEM="
 set "MSYS="
+rem ESP-IDF kconfgen reads project Kconfig files through Python's locale.
+rem Force UTF-8 so Chinese comments/labels build correctly on GBK Windows.
+set "PYTHONUTF8=1"
 
 rem Prefer an existing ESP-IDF environment. This fallback matches the original
 rem development machine and can be overridden by setting IDF_PATH beforehand.

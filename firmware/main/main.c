@@ -7,6 +7,7 @@
 #include "cmd_parser.h"
 #include "stabilize.h"
 #include "thruster.h"
+#include "training_session.h"
 #include "transport_bt.h"
 #include "transport_http.h"
 #include "transport_uart.h"
@@ -21,6 +22,7 @@ void app_main(void)
 {
     bsp_init();
     thruster_init();
+    training_session_init();
     cmd_parser_init();
 
     xTaskCreate(thruster_task, "thruster", 4096, NULL, 5, NULL);

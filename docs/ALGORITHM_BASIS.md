@@ -1,0 +1,107 @@
+# 单腿训练指标与安全算法依据
+
+> 版本：工程 MVP 0.1，2026-08-12
+>
+> 适用硬件：单个 JY61P，安装于一条腿的小腿中部；三路水下动力单元。
+>
+> 重要边界：本文定义的是工程检测和趋势指标，不是医疗处方、诊断结论或经过临床验证的疗效评价。
+
+## 1. 为什么可以用单个小腿 IMU 计完整周期
+
+小腿角速度中包含明显的周期性摆动和相位反转。已有研究使用小腿佩戴的惯性传感器识别初始接触和足离地事件，并在老年人、帕金森病和脑卒中人群中验证了直线步行事件检测性能：
+
+- [Validation of an algorithm for real-time event detection during long-term free-living walking using shank IMUs](https://pmc.ncbi.nlm.nih.gov/articles/PMC7866479/)
+- [Gait Event Detection with a Single Shank-Worn Inertial Measurement Unit](https://pmc.ncbi.nlm.nih.gov/articles/PMC9143761/)
+
+本项目的“一步”不是足跟触地，而是单腿一次完整“抬起—峰值—回位”。因此第一版直接用相对中立位的小腿主轴角和角速度建立三态状态机：
+
+```text
+SETTLED 中立位 → LIFTING 抬腿 → RETURNING 回位 → SETTLED（计一步）
+```
+
+这比在 500 ms 网页轮询里寻找峰值更可靠；事件识别在 ESP32 的高频 IMU 数据路径中运行。
+
+## 2. 动作角度为什么不能直接照搬膝关节文献
+
+脑卒中步态研究报告的摆动期峰值膝屈曲存在很大个体差异，例如一项队列研究中脑卒中人群为 `41 ± 16°`，健康对照随速度约为 `52–61°`：[Towards a precision rehabilitation approach for post-stroke stiff knee gait](https://pubmed.ncbi.nlm.nih.gov/40517561/)。另有综述指出脑卒中僵硬膝步态研究中峰值膝屈曲分布较宽，且不存在脱离行走速度的统一量化标准：[Stiff Knee Gait in Stroke—Current Mechanisms and Rehabilitation Strategies](https://pmc.ncbi.nlm.nih.gov/articles/PMC12187528/)。
+
+本设备没有大腿 IMU，所以只有小腿相对空间角，不能计算“大腿—小腿”的真实膝关节夹角。将 41° 或 60° 直接用作本设备 `pitch` 的康复阈值，在几何和临床意义上都不成立。
+
+第一版因此采用可配置的“小腿轨迹工程范围”：
+
+- 抬腿超过 8° 才进入候选周期。
+- 15–45° 小腿 ROM 作为初始目标范围。
+- 10–90°/s 平均角速度作为初始目标范围。
+- 横向偏移不超过 8°、回位误差不超过 5°。
+- 完整周期 0.8–8.0 s，兼顾早期缓慢动作并排除抖动。
+
+这些值的作用是开始采样、联调 UI 和发现明显偏离，不是“早期康复必须抬到多少度”的处方。实际目标应由治疗人员根据患者阶段设置，并用水下实机样本校准。
+
+## 3. 横向偏移与膝侧向风险的表述边界
+
+膝关节额状面负荷与动态外翻/内翻确实是重要的生物力学问题，但真实膝外翻角需要大腿和小腿两个节段的相对姿态，通常还要考虑髋、足和外力。单个小腿 IMU 的 `roll` 只能说明“小腿相对开始姿态的横向偏移”，不能诊断膝外翻，也不能据此量化膝侧向损伤风险。
+
+所以 UI 使用“横向偏移”与“请减小左右摆动”，不用“膝外翻损伤概率”等措辞。未来若要评价膝关节额状面角度，应至少增加大腿 IMU；若要评价关节力矩，还要增加外力或足底受力测量。
+
+## 4. 身高、腿长与等效步长
+
+中国成人身体节段参数研究按中国国家标准列出了平均节段比例：大腿约为身高的 28.13%，小腿约为 23.86%：[Noninvasive Estimation of Joint Moments with Inertial Sensor System for Analysis of STS Rehabilitation Training](https://pmc.ncbi.nlm.nih.gov/articles/PMC5828652/)。因此第一版使用：
+
+```text
+估算小腿长 = 身高 × 0.2386
+估算大腿+小腿长 = 身高 × (0.2813 + 0.2386) = 身高 × 0.5199
+等效步长 = 2 × 估算小腿长 × sin(小腿 ROM / 2)
+```
+
+等效步长是小腿末端在该角度范围内对应的弦长。它适合做同一患者、同一绑带位置、同一动作形式下的趋势比较，但不等于两次足跟着地的地面步长。
+
+原因包括：
+
+- 身体节段比例存在年龄、性别、人群和个体差异；老年人研究中的小腿长度/身高比例也呈现可见离散范围：[The effect of obesity and gender on body segment parameters in older adults](https://pmc.ncbi.nlm.nih.gov/articles/PMC2820296/)。
+- 水下步态的速度、步长和时相与陆地不同：[Kinematic Analysis of Gait in Healthy Subjects on Land and in Water](https://pmc.ncbi.nlm.nih.gov/articles/PMC4723164/)。
+- 单 IMU 空间参数误差通常高于时间事件参数，尤其无法直接观察髋部平移和足底接触：[Inertial Sensor-Based Gait Analysis: A Systematic Review](https://pmc.ncbi.nlm.nih.gov/articles/PMC6339047/)。
+
+App 允许输入实测小腿长覆盖比例估算；报告字段始终带 `_est` 或“估算”标识。
+
+## 5. 为什么不能输出真实力、力矩、功率和肌力
+
+当前输入只有电调脉宽指令与小腿 IMU。PWM 指令不等于电机功率，因为缺少：
+
+- 母线电压和电流。
+- 电机转速与桨叶/推进器推力曲线。
+- 水流速度、安装力臂与实际关节几何。
+- 患者主动肌肉和设备动力对同一运动的贡献分解。
+
+固件第一版只输出：
+
+```text
+设备介入度 = 时间平均(|横向纠偏指令| / 当前模式输出上限) × 100%
+峰值介入度 = max(|横向纠偏指令| / 当前模式输出上限) × 100%
+纠偏负荷指数 = Σ[(|纠偏指令| / 上限) × |横向角速度| × Δt]
+```
+
+这些是无量纲或工程指数，只用于同一设备的相对比较。未来增加电压、电流、转速和水中推力标定后，可以逐步估算设备侧功率和作用力矩；患者肌力仍需要额外的生理或力学模型与验证。
+
+## 6. 疑似跌倒检测
+
+可穿戴跌倒检测研究普遍结合加速度幅值、角速度、姿态改变和落地后稳定阶段；仅用一个冲击阈值更容易把日常活动误判为跌倒。一项多阶段状态机研究使用低加速度、随后冲击、稳定性和姿态改变逐级确认：[Wearable Fall Detection System with Real-Time Localization and Notification Capabilities](https://pmc.ncbi.nlm.nih.gov/articles/PMC12196599/)。另一项研究也显示“冲击后静止与姿态改变”比单加速度阈值减少日常活动误报：[Development of a Wearable-Sensor-Based Fall Detection System](https://pmc.ncbi.nlm.nih.gov/articles/PMC4346101/)。
+
+本项目第一版采用：
+
+```text
+候选触发：合加速度过低或冲击，同时合角速度较高
+冲击确认：短时间内出现较高合加速度；水下允许无明显冲击分支
+姿态确认：相对训练开始姿态改变至少 45°
+稳定确认：角速度较低且合加速度接近 1g，持续至少 0.8s
+安全动作：暂停会话 + 闩锁急停 + 保存触发证据
+```
+
+研究阈值多来自腰部/躯干传感器和陆地模拟跌倒，不能直接视为小腿中部水下安装的验证结果。当前阈值刻意采用多条件组合以降低误报，但仍必须采集以下数据后重标定：正常缓慢抬腿、快速甩腿、治疗人员扶持、蹲下/坐下、绑带松动、水下失衡和受控模拟跌倒。
+
+## 7. 验证要求
+
+- 用同步视频人工标注每个抬起、峰值和回位事件。
+- 至少分别统计漏计、重复计、无效微动误计和横向偏移动作分类。
+- 陆地阈值不能直接作为水下最终阈值。
+- 疑似跌倒验证必须有人体保护和独立硬件断电手段，不能为了采样让患者真实跌倒。
+- 所有历史报告保存算法版本、安装方向、身高/实测小腿长和当次阈值。

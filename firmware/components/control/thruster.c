@@ -43,6 +43,21 @@ void thruster_set_pulse(size_t idx, uint32_t pulse_us)
     pulse_us = clamp_pulse(pulse_us);
     s_thrusters[idx].current_pulse = pulse_us;
     s_thrusters[idx].target_pulse  = pulse_us;
+    if (pulse_us == THRUSTER_STOP_PULSE) {
+        s_thrusters[idx].speed = 0;
+    } else if (pulse_us > THRUSTER_STOP_PULSE &&
+               THRUSTER_MAX_PULSE > THRUSTER_STOP_PULSE) {
+        s_thrusters[idx].speed =
+            (int32_t)((pulse_us - THRUSTER_STOP_PULSE) * 1000U /
+                      (THRUSTER_MAX_PULSE - THRUSTER_STOP_PULSE));
+    } else if (pulse_us < THRUSTER_STOP_PULSE &&
+               THRUSTER_STOP_PULSE > THRUSTER_MIN_PULSE) {
+        s_thrusters[idx].speed =
+            -(int32_t)((THRUSTER_STOP_PULSE - pulse_us) * 1000U /
+                       (THRUSTER_STOP_PULSE - THRUSTER_MIN_PULSE));
+    } else {
+        s_thrusters[idx].speed = 0;
+    }
     bsp_esc_set_pulse(idx, pulse_us);
 }
 

@@ -8,6 +8,7 @@
 #include "driver/imu_uart.h"
 #include "driver/jy61p.h"
 #include "thruster.h"
+#include "training_session.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -84,6 +85,47 @@ static void imu_rx_task(void *arg)
             s_status.yawDeg    = wrap_angle(d.yawDeg - s_zeroYaw);
             s_status.gyroDps   = d.gyroYDps;   /* 俯仰轴角速度 */
             s_status.gyroRollDps = d.gyroXDps; /* 横滚轴角速度 */
+            s_status.gyroXDps  = d.gyroXDps;
+            s_status.gyroYDps  = d.gyroYDps;
+            s_status.gyroZDps  = d.gyroZDps;
+            s_status.accelXG   = d.accelXG;
+            s_status.accelYG   = d.accelYG;
+            s_status.accelZG   = d.accelZG;
+            s_status.sampleTimestampMs = d.timestampMs;
+
+            /* 训练主轴跟随控制轴配置。完整遥测仍保留 JY61P 原始轴。 */
+#if CONFIG_STAB_SWAP_PITCH_ROLL
+            const float trainPitch = s_status.rollDeg;
+            const float trainRoll = s_status.pitchDeg;
+            const float trainPitchGyro = d.gyroXDps;
+            const float trainRollGyro = d.gyroYDps;
+#else
+            const float trainPitch = s_status.pitchDeg;
+            const float trainRoll = s_status.rollDeg;
+            const float trainPitchGyro = d.gyroYDps;
+            const float trainRollGyro = d.gyroXDps;
+#endif
+            s_status.motionDeg = trainPitch;
+            s_status.lateralDeg = trainRoll;
+            s_status.motionGyroDps = trainPitchGyro;
+            s_status.lateralGyroDps = trainRollGyro;
+            const training_sample_t sample = {
+                .nowMs = d.timestampMs,
+                .imuValid = true,
+                .estop = control_is_estop(),
+                .mode = (int)control_mode_get(),
+                .pitchDeg = trainPitch,
+                .rollDeg = trainRoll,
+                .gyroXDps = trainRollGyro,
+                .gyroYDps = trainPitchGyro,
+                .gyroZDps = d.gyroZDps,
+                .accelXG = d.accelXG,
+                .accelYG = d.accelYG,
+                .accelZG = d.accelZG,
+                .correctionOut = s_status.rollOut,
+                .controlCap = (float)control_mode_cap(),
+            };
+            training_session_feed(&sample);
         }
 
         /* 诊断计数（轻量，仅读） */
@@ -111,6 +153,12 @@ static void control_task(void *arg)
 
         s_status.mode  = (int)control_mode_get();
         s_status.estop = control_is_estop();
+
+        if (training_session_take_fall_event()) {
+            ESP_LOGE(TAG, "suspected fall confirmed: latching emergency stop");
+            control_estop_latch();
+            s_status.estop = true;
+        }
 
         if (s_status.enabled) {
             if (s_status.imuValid && !s_status.staleFault &&
@@ -151,7 +199,10 @@ static void control_task(void *arg)
                 s_status.pitchOut = CONFIG_STAB_PITCH_SIGN * s_pitch_ctrl.output;
                 s_status.rollOut  = CONFIG_STAB_ROLL_SIGN * s_roll_ctrl.output;
                 s_status.pitchInDeadband = s_pitch_ctrl.inDeadband;
-                s_status.pitchAngleStop  = s_pitch_ctrl.angleStop;
+                /* 主动模式 T2 永远中位，俯仰超控制角不会关闭横向纠偏。
+                 * 训练模块使用独立、可配置的 ROM 范围评价小腿动作。 */
+                s_status.pitchAngleStop  =
+                    (control_mode_get() != MODE_ACTIVE) && s_pitch_ctrl.angleStop;
 
                 /* 按当前模式统一限幅（PWM 幅值上限） */
                 const float cap = (float)control_mode_cap();
@@ -160,13 +211,13 @@ static void control_task(void *arg)
 
                 /* ---- 三模式输出映射 ----
                  * 助力 assist   : pitch->推进；roll->左右舵差动
-                 * 主动 active   : 推进常开基准油门；左右舵按姿态维持
+                 * 主动 active   : 推进保持中位；左右舵只做横向腿位纠偏
                  * 阻抗 impedance: 抬脚(pitch>0) -> 推进反转(负输出)；左右舵维持姿态
                  *                 （反转脉宽需双向电调；单向电调只会减速到停） */
                 float t2;
                 switch (control_mode_get()) {
                 case MODE_ACTIVE:
-                    t2 = (float)control_active_base();
+                    t2 = 0.0f;  /* 患者主动抬腿：主推进器不提供助推 */
                     break;
                 case MODE_IMPEDANCE:
                     t2 = -s_status.pitchOut;   /* 阻抗：抵抗抬腿 = 反向 */

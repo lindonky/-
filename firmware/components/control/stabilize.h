@@ -18,13 +18,24 @@ typedef struct {
     float rollDeg;        /* 相对零位 */
     float pitchDeg;
     float yawDeg;
+    float motionDeg;      /* 按安装轴配置映射后的抬腿主轴角 */
+    float lateralDeg;     /* 按安装轴配置映射后的横向偏移角 */
     float gyroDps;        /* 俯仰轴角速度（控制环当前值） */
     float gyroRollDps;    /* 横滚轴角速度 */
+    float motionGyroDps;  /* 映射后的抬腿轴角速度 */
+    float lateralGyroDps; /* 映射后的横向轴角速度 */
+    float gyroXDps;       /* JY61P 原始三轴角速度 */
+    float gyroYDps;
+    float gyroZDps;
+    float accelXG;        /* JY61P 原始三轴加速度，单位 g */
+    float accelYG;
+    float accelZG;
     float pitchOut;       /* 俯仰环输出（推进，已按模式限幅） */
     float rollOut;        /* 横滚环输出（差动，已按模式限幅） */
     bool pitchInDeadband;
     bool pitchAngleStop;
     uint32_t sampleSeq;
+    uint32_t sampleTimestampMs;
     /* IMU 串口诊断 */
     uint32_t rxBytes;          /* UART2 收到的原始字节数 */
     uint32_t validFrames;

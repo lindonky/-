@@ -31,6 +31,6 @@ android/build/
 android/app/build/
 *.apk
 *.aab
+*.obj
 __pycache__/
 *.py[cod]
-

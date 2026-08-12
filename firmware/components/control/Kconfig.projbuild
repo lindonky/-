@@ -95,20 +95,13 @@ menu "ESC Control"
         help
             Assist (support) mode: attitude stabilization output upper limit.
 
-    config MODE_ACTIVE_BASE
-        int "Active mode base propulsion (0-1000)"
-        default 500
-        range 0 1000
-        help
-            Active mode keeps the propulsion thruster at this constant
-            forward level; the rudders keep the attitude.
-
     config MODE_ACTIVE_MAX
         int "Active mode max output (0-1000)"
         default 1000
         range 100 1000
         help
-            Active mode output upper limit (propulsion + rudder diff).
+            Active mode left/right correction output upper limit. The middle
+            propulsion thruster always remains neutral in active mode.
 
     config MODE_IMPEDANCE_MAX
         int "Impedance mode max output (0-1000)"
@@ -118,6 +111,60 @@ menu "ESC Control"
             Impedance mode: reverses propulsion when the leg lifts
             (requires bidirectional ESCs; single-direction ESCs just slow
             to a stop). Output upper limit for both reverse and rudders.
+
+    menu "Single-leg training metrics (engineering defaults)"
+
+        config TRAIN_LIFT_START_DEG
+            int "Lift detection threshold (shank deg)"
+            default 8
+            range 3 30
+
+        config TRAIN_ROM_MIN_DEG
+            int "Qualified shank ROM minimum (deg)"
+            default 15
+            range 5 60
+
+        config TRAIN_ROM_MAX_DEG
+            int "Qualified shank ROM maximum (deg)"
+            default 45
+            range 10 80
+
+        config TRAIN_ROM_LIMIT_DEG
+            int "Reject cycle beyond shank ROM (deg)"
+            default 60
+            range 20 90
+
+        config TRAIN_SPEED_MIN_DPS
+            int "Qualified mean angular speed minimum (deg/s)"
+            default 10
+            range 1 100
+
+        config TRAIN_SPEED_MAX_DPS
+            int "Qualified mean angular speed maximum (deg/s)"
+            default 90
+            range 20 300
+
+        config TRAIN_CYCLE_MIN_MS
+            int "Qualified cycle minimum time (ms)"
+            default 800
+            range 300 5000
+
+        config TRAIN_CYCLE_MAX_MS
+            int "Cycle timeout / qualified maximum time (ms)"
+            default 8000
+            range 2000 30000
+
+        config TRAIN_LATERAL_MAX_DEG
+            int "Qualified lateral shank deviation maximum (deg)"
+            default 8
+            range 2 30
+
+        config TRAIN_RETURN_WINDOW_DEG
+            int "Return-to-neutral window (deg)"
+            default 5
+            range 2 15
+
+    endmenu
 
     config STAB_SWAP_PITCH_ROLL
         bool "Swap pitch/roll (JY61P mounted rotated 90 deg)"

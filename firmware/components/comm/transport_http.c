@@ -6,11 +6,13 @@
 #include "cmd_parser.h"
 #include "stabilize.h"
 #include "thruster.h"
+#include "training_session.h"
 
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -19,7 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define HTTP_RESP_MAX 256
+#define HTTP_RESP_MAX 512
 
 static const char *TAG = "http_ctl";
 
@@ -79,12 +81,18 @@ static esp_err_t handle_status(httpd_req_t *req)
     const int len = snprintf(
         buf, sizeof(buf),
         "{\"cal\":%d,\"r\":%.1f,\"p\":%.1f,\"y\":%.1f,\"g\":%.1f,"
+        "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
+        "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"seq\":%lu,\"age\":%lu,\"imu\":%d,"
         "\"stab\":%d,\"mde\":%d,\"es\":%d,\"po\":%d,\"ro\":%d,\"stop\":%d,"
         "\"m\":[{\"s\":%d,\"c\":%lu,\"t\":%lu},"
         "{\"s\":%d,\"c\":%lu,\"t\":%lu},"
         "{\"s\":%d,\"c\":%lu,\"t\":%lu}]}",
         (int)thruster_is_calibrating(),
         st->rollDeg, st->pitchDeg, st->yawDeg, st->gyroDps,
+        st->gyroXDps, st->gyroYDps, st->gyroZDps,
+        st->accelXG, st->accelYG, st->accelZG,
+        (unsigned long)st->sampleSeq, (unsigned long)st->lastFrameAgeMs,
+        (int)st->imuValid,
         (int)st->enabled, (int)st->mode, (int)st->estop,
         (int)st->pitchOut, (int)st->rollOut,
         (int)st->pitchAngleStop,
@@ -96,6 +104,43 @@ static esp_err_t handle_status(httpd_req_t *req)
         (unsigned long)thruster_get_target_pulse(2));
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, buf, len);
+    return ESP_OK;
+}
+
+/* --- 训练会话摘要：计步在 ESP32 高频任务中完成，网页只读取结果 --- */
+static esp_err_t handle_training_status(httpd_req_t *req)
+{
+    training_status_t ts;
+    const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000U);
+    training_session_get_status(&ts, now);
+    char buf[1024];
+    const int len = snprintf(
+        buf, sizeof(buf),
+        "{\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
+        "\"steps\":%lu,\"qualified\":%lu,\"invalid\":%lu,\"score_pct\":%.1f,"
+        "\"rom_last_deg\":%.1f,\"rom_avg_deg\":%.1f,\"peak_speed_dps\":%.1f,"
+        "\"cycle_s\":%.2f,\"lift_s\":%.2f,\"return_s\":%.2f,\"cadence_spm\":%.1f,"
+        "\"lateral_deg\":%.1f,\"return_error_deg\":%.1f,"
+        "\"height_cm\":%.1f,\"leg_cm_est\":%.1f,\"shank_cm\":%.1f,\"shank_measured\":%d,"
+        "\"step_cm_est\":%.1f,\"step_avg_cm_est\":%.1f,"
+        "\"intervention_mean_pct\":%.1f,\"intervention_peak_pct\":%.1f,\"correction_load_index\":%.1f,"
+        "\"quality_flags\":%lu,\"fall_stage\":%u,\"fall_events\":%lu,"
+        "\"accel_g\":%.2f,\"gyro_dps\":%.1f,\"fall_tilt_deg\":%.1f,\"event\":\"%s\"}",
+        training_state_name(ts.state), training_phase_name(ts.phase),
+        (unsigned long)ts.sessionId, (unsigned long)ts.elapsedMs, ts.mode,
+        (unsigned long)ts.steps, (unsigned long)ts.qualifiedSteps,
+        (unsigned long)ts.invalidCycles, ts.qualifiedPct,
+        ts.lastRomDeg, ts.averageRomDeg, ts.lastPeakSpeedDps,
+        ts.lastCycleSec, ts.lastLiftSec, ts.lastReturnSec, ts.cadenceSpm,
+        ts.lastLateralDeg, ts.lastReturnErrorDeg,
+        ts.heightCm, ts.estimatedLegCm, ts.shankLengthCm, (int)ts.shankLengthMeasured,
+        ts.lastEstimatedStepCm, ts.averageEstimatedStepCm,
+        ts.interventionMeanPct, ts.interventionPeakPct, ts.correctionLoadIndex,
+        (unsigned long)ts.lastQualityFlags, (unsigned int)ts.fallStage,
+        (unsigned long)ts.fallEvents, ts.lastAccelMagnitudeG,
+        ts.lastGyroMagnitudeDps, ts.lastFallTiltDeg, ts.lastEvent);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, (len > 0 && len < (int)sizeof(buf)) ? len : HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -191,10 +236,12 @@ static void http_server_init(void)
     static const httpd_uri_t uri_root   = { .uri = "/",           .method = HTTP_GET,  .handler = handle_root,     .user_ctx = NULL };
     static const httpd_uri_t uri_leg    = { .uri = "/leg.js",     .method = HTTP_GET,  .handler = handle_leg_model,.user_ctx = NULL };
     static const httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET,  .handler = handle_status,   .user_ctx = NULL };
+    static const httpd_uri_t uri_train  = { .uri = "/api/training/status", .method = HTTP_GET, .handler = handle_training_status, .user_ctx = NULL };
     static const httpd_uri_t uri_cmd    = { .uri = "/api/cmd",    .method = HTTP_POST, .handler = handle_cmd,      .user_ctx = NULL };
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_root);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_leg);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_status);
+    httpd_register_uri_handler(server, (httpd_uri_t *)&uri_train);
     httpd_register_uri_handler(server, (httpd_uri_t *)&uri_cmd);
     ESP_LOGI(TAG, "web UI at http://192.168.4.1");
 }

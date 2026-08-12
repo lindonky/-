@@ -93,6 +93,9 @@ T1|T2|T3 -1000..1000
 TALL -1000..1000
 JOY x y
 STAB ON|OFF|ZERO
+TRAIN START|PAUSE|RESUME|STOP|RESET
+TRAIN HEIGHT <cm>
+TRAIN SHANK <cm>
 PULSE n us
 CAL
 ```
@@ -100,6 +103,8 @@ CAL
 详细说明：
 
 - [产品需求基线与开发路线](docs/PRODUCT_REQUIREMENTS.md)
+- [持续开发日志](docs/DEVELOPMENT_LOG.md)
+- [单腿训练指标与安全算法依据](docs/ALGORITHM_BASIS.md)
 - [工程交接说明](docs/HANDOVER.md)
 - [固件说明](firmware/README.md)
 
