@@ -146,7 +146,14 @@ class DeviceState:
         pitch = 18.0 * max(0.0, math.sin(elapsed / 900.0 * math.pi)) if moving else 0.0
         roll = 2.4 * math.sin(elapsed / 700.0) if moving else 0.0
         correction = int(round(roll * 18.0)) if self.stabilize and not self.estop else 0
+        propulsion = 0
+        if moving and self.stabilize and not self.estop:
+            if self.mode == 0:
+                propulsion = int(round(pitch * 18.0))
+            elif self.mode == 2:
+                propulsion = -int(round(pitch * 14.0))
         t1 = max(-1000, min(1000, -correction))
+        t2 = max(-1000, min(1000, propulsion))
         t3 = max(-1000, min(1000, correction))
         return {
             "cal": 0,
@@ -166,12 +173,12 @@ class DeviceState:
             "stab": int(self.stabilize),
             "mde": self.mode,
             "es": int(self.estop),
-            "po": 0,
+            "po": t2,
             "ro": correction,
             "stop": 0,
             "m": [
                 {"s": t1, "c": 1500 + t1 // 2, "t": 1500 + t1 // 2},
-                {"s": 0, "c": 1500, "t": 1500},
+                {"s": t2, "c": 1500 + t2 // 2, "t": 1500 + t2 // 2},
                 {"s": t3, "c": 1500 + t3 // 2, "t": 1500 + t3 // 2},
             ],
         }
@@ -262,7 +269,6 @@ class DeviceState:
             self.session_started = time.monotonic()
             self.accumulated_ms = 0
             self.last_step_count = 0
-            self.mode = 1
             return "TRAIN_OK:running"
         if upper[:2] == ["TRAIN", "PAUSE"]:
             self.pause_clock()
