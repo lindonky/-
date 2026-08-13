@@ -25,6 +25,15 @@ from urllib.parse import urlsplit
 WEB_PAGE = Path(__file__).resolve().parents[1] / "components" / "comm" / "web_page.html"
 
 
+def band_score(value: float, low: float, high: float, zero_low: float, zero_high: float) -> float:
+    """Continuous 0..100 score matching the firmware's engineering bands."""
+    if low <= value <= high:
+        return 100.0
+    if value < low:
+        return 0.0 if low <= zero_low else 100.0 * max(0.0, min(1.0, (value - zero_low) / (low - zero_low)))
+    return 0.0 if zero_high <= high else 100.0 * max(0.0, min(1.0, (zero_high - value) / (zero_high - high)))
+
+
 class DeviceState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -81,11 +90,40 @@ class DeviceState:
             if cadence > self.goal_cadence_spm + self.goal_cadence_tolerance_spm:
                 quality_flags |= 256
         step_cm = 2.0 * shank_cm * math.sin(math.radians(rom / 2.0)) if completed else 0.0
+        distance_cm = steps * step_cm
+        if completed:
+            rom_min = self.goal_rom_min_deg if self.goal_enabled else 15.0
+            rom_max = self.goal_rom_max_deg if self.goal_enabled else 45.0
+            rom_score = band_score(rom, rom_min, rom_max, 8.0, 60.0)
+            speed_score = band_score(2.0 * rom / 1.8, 10.0, 90.0, 0.0, 180.0)
+            lateral_score = band_score(2.4, 0.0, 8.0, 0.0, 16.0)
+            return_score = band_score(1.2, 0.0, 5.0, 0.0, 8.0)
+            cycle_score = band_score(1800.0, 800.0, 8000.0, 0.0, 16000.0)
+            cadence_score = 100.0
+            if self.goal_enabled:
+                tol = self.goal_cadence_tolerance_spm
+                cadence_score = band_score(
+                    cadence,
+                    self.goal_cadence_spm - tol,
+                    self.goal_cadence_spm + tol,
+                    max(0.0, self.goal_cadence_spm - 3.0 * tol),
+                    self.goal_cadence_spm + 3.0 * tol,
+                )
+            score_pct = (
+                0.30 * rom_score
+                + 0.20 * speed_score
+                + 0.20 * lateral_score
+                + 0.15 * return_score
+                + 0.10 * cycle_score
+                + 0.05 * cadence_score
+            )
+        else:
+            score_pct = 0.0
         phase = "settled"
         if self.training_state == "running":
             phase = ("lifting", "returning", "settled")[(elapsed // 600) % 3]
         return {
-            "algo": "single-leg-mvp-0.1",
+            "algo": "single-leg-mvp-0.2",
             "device_boot": self.boot_id,
             "state": self.training_state,
             "phase": phase,
@@ -93,9 +131,10 @@ class DeviceState:
             "elapsed_ms": elapsed,
             "mode": self.mode,
             "steps": steps,
-            "qualified": steps,
+            "qualified": steps if quality_flags == 0 else 0,
             "invalid": 0,
-            "score_pct": 92.0 if completed else 0.0,
+            "score_pct": score_pct,
+            "last_score_pct": score_pct,
             "rom_last_deg": rom,
             "rom_avg_deg": rom,
             "peak_speed_dps": 54.2 if completed else 0.0,
@@ -111,6 +150,7 @@ class DeviceState:
             "shank_measured": bool(self.shank_override_cm),
             "step_cm_est": step_cm,
             "step_avg_cm_est": step_cm,
+            "distance_cm_est": distance_cm,
             "intervention_mean_pct": 12.0 if completed else 0.0,
             "intervention_peak_pct": 26.0 if completed else 0.0,
             "correction_load_index": 8.5 if completed else 0.0,

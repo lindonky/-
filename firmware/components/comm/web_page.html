@@ -218,7 +218,7 @@
   </div>
   <div class="modeOverview">
     <div class="modeOverviewTop">
-      <div><h3 id="modeOverviewTitle">助力训练</h3><p id="modeOverviewText">中间推进器辅助完成抬腿，左右电机维持横向腿位，适合需要外部助力完成动作的训练。</p></div>
+      <div><h3 id="modeOverviewTitle">助力训练</h3><p id="modeOverviewText">适合需要外部助力完成动作的训练。</p></div>
       <span class="pill" id="modePill">助力</span>
     </div>
     <div class="modeFeatures">
@@ -230,7 +230,7 @@
 </div>
 
 <div class="card profileShortcut">
-  <div class="profileCopy"><strong>训练档案</strong><span id="profileShortcutValue">请先录入身高，用于估算腿长和等效步长</span></div>
+  <div class="profileCopy"><strong>训练档案</strong><span id="profileShortcutValue">请先录入身高，用于估算腿长和行走距离</span></div>
   <button class="linkBtn" id="openProfile" type="button">查看档案</button>
 </div>
 
@@ -259,7 +259,7 @@
   <div class="metrics">
     <div class="metric"><b id="cadenceVal">--</b><span>实际步频 步/分</span><small class="metricGoal" id="cadenceGoal" hidden>目标 --</small></div>
     <div class="metric"><b id="romVal">--</b><span>实际小腿 ROM</span><small class="metricGoal" id="romGoal" hidden>目标 --</small></div>
-    <div class="metric"><b id="stepLengthVal">--</b><span>估算步长 cm</span></div>
+    <div class="metric"><b id="stepLengthVal">--</b><span>行走距离</span></div>
     <div class="metric"><b id="lateralVal">--</b><span>横向偏移</span></div>
     <div class="metric"><b id="interventionVal">--</b><span>设备介入度</span></div>
     <div class="metric"><b id="cycleVal">--</b><span>周期 秒</span></div>
@@ -290,7 +290,7 @@
       <div class="reportItem"><b id="reportSteps">0</b><span>步数</span></div>
       <div class="reportItem"><b id="reportScore">--</b><span>轨迹达标率</span></div>
       <div class="reportItem"><b id="reportRom">--</b><span>平均 ROM</span></div>
-      <div class="reportItem"><b id="reportStepCm">--</b><span>平均估算步长</span></div>
+      <div class="reportItem"><b id="reportStepCm">--</b><span>行走距离</span></div>
     </div>
     <div class="notice" id="reportNote"></div>
   </div>
@@ -300,7 +300,7 @@
     <button class="btn ghost grow" id="exportCsv">导出 CSV</button>
     <button class="btn danger" id="clearHistory">清空</button>
   </div>
-  <div class="notice">报告保存在当前 App/WebView 的本地存储中；清除 App 数据会删除历史。估算步长和轨迹达标率不是临床测量。</div>
+  <div class="notice">报告保存在当前 App/WebView 的本地存储中；清除 App 数据会删除历史。行走距离和轨迹达标率是工程估算，不是临床测量。</div>
 </div>
 
 <div class="sectionTitle"><h3>设备与姿态</h3><span>实时诊断</span></div>
@@ -447,7 +447,7 @@
 
 <div class="card identityCard">
   <div class="avatar">🦵</div>
-  <div><h3>单腿训练档案</h3><p>数据仅保存在当前设备和当前 App/WebView 中</p></div>
+  <div><h3>训练档案</h3></div>
 </div>
 
 <div class="card">
@@ -457,7 +457,7 @@
     <label class="field"><span>实测小腿长（cm，可选）</span><input id="shankInput" type="number" min="0" max="70" step="0.5" value="0" placeholder="0=估算"></label>
     <button class="btn acc" id="saveProfile">保存档案</button>
   </div>
-  <div class="notice" id="profileInfo">估算腿长 -- cm · 小腿长 -- cm。步长是小腿角度对应的等效弦长，不是足跟实测距离。</div>
+  <div class="notice" id="profileInfo">估算腿长 -- cm · 小腿长 -- cm。行走距离按每一步的等效弦长累计，不是足跟实测距离。</div>
 </div>
 
 <div class="card">
@@ -466,7 +466,7 @@
     <div class="statusRow"><span>控制器连接</span><b id="myConnection">等待设备</b></div>
     <div class="statusRow"><span>JY61P 姿态传感器</span><b id="myImu">等待数据</b></div>
     <div class="statusRow"><span>当前训练模式</span><b id="myMode">助力训练</b></div>
-    <div class="statusRow"><span>算法版本</span><b id="myAlgorithm">single-leg-mvp-0.1</b></div>
+    <div class="statusRow"><span>算法版本</span><b id="myAlgorithm">single-leg-mvp-0.2</b></div>
   </div>
 </div>
 
@@ -474,7 +474,7 @@
   <div class="mhead"><span class="mname">安全与数据说明</span><span class="pill cal">工程验证阶段</span></div>
   <ul class="safetyList">
     <li>急停在三个页面顶部始终可用，解除急停不会自动恢复训练。</li>
-    <li>ROM、步频、等效步长和轨迹达标率均为工程估算，不是医学诊断。</li>
+    <li>ROM、步频、行走距离和轨迹达标率均为工程估算，不是医学诊断。</li>
     <li>阻抗训练需要双向电调；单向电调只能减速到停，不能提供反向阻力。</li>
     <li>训练应有治疗人员或保护人员在场，水下阈值仍需实测回标。</li>
   </ul>
@@ -517,6 +517,9 @@ const HISTORY_MAX=100;
 let goalDirty=false;
 let captureStatus=null;
 let noticeTimer=null;
+let statusPollPending=false;
+let trainingPollPending=false;
+let capturePollPending=false;
 const MODE_NAMES_CN=["助力","主动","阻抗"];
 const MODE_TRAIN_NAMES=["助力训练","主动训练","阻抗训练"];
 const MODE_COMMANDS=["assist","active","impedance"];
@@ -588,6 +591,11 @@ function fmtTime(ms){
   const total=Math.max(0,Math.floor((ms||0)/1000));
   return String(Math.floor(total/60)).padStart(2,"0")+":"+String(total%60).padStart(2,"0");
 }
+function fmtDistance(cm){
+  const value=num(cm,0);
+  if(value<=0)return "--";
+  return value<100?value.toFixed(0)+" cm":(value/100).toFixed(value>=1000?2:1)+" m";
+}
 function metric(id,v,digits,suffix,allowZero){
   const el=document.getElementById(id);
   const valid=Number.isFinite(v)&&(allowZero?v>=0:v>0);
@@ -618,7 +626,8 @@ function renderHistory(){
   document.getElementById("reportSteps").textContent=num(x.steps,0);
   document.getElementById("reportScore").textContent=num(x.steps,0)?Math.round(num(x.score_pct,0))+"%":"--";
   document.getElementById("reportRom").textContent=num(x.rom_avg_deg,0)>0?num(x.rom_avg_deg,0).toFixed(1)+"°":"--";
-  document.getElementById("reportStepCm").textContent=num(x.step_avg_cm_est,0)>0?num(x.step_avg_cm_est,0).toFixed(1)+" cm":"--";
+  const reportDistance=num(x.distance_cm_est,num(x.step_avg_cm_est,0)*num(x.steps,0));
+  document.getElementById("reportStepCm").textContent=fmtDistance(reportDistance);
   const goalNote=x.goal_enabled
     ? " · 目标 ROM "+num(x.goal_rom_min_deg,0).toFixed(0)+"–"+num(x.goal_rom_max_deg,0).toFixed(0)+"° / "+num(x.goal_cadence_spm,0).toFixed(0)+" 步/分"
     : " · 未设置训练目标";
@@ -655,7 +664,7 @@ function exportHistory(kind){
     data=JSON.stringify({schema:"alwaysbea-training-history-v1",exported_at:new Date().toISOString(),sessions:h},null,2);
     mime="application/json;charset=utf-8";name="alwaysbea-training-history.json";
   }else{
-    const cols=["finished_at","id","elapsed_ms","steps","qualified","score_pct","rom_avg_deg","step_avg_cm_est","cadence_spm","lateral_deg","intervention_mean_pct","fall_events","height_cm","shank_cm","shank_measured","goal_enabled","goal_rom_min_deg","goal_rom_max_deg","goal_cadence_spm","goal_cadence_tolerance_spm","algo"];
+    const cols=["finished_at","id","elapsed_ms","steps","qualified","score_pct","last_score_pct","rom_avg_deg","distance_cm_est","step_avg_cm_est","cadence_spm","lateral_deg","intervention_mean_pct","fall_events","height_cm","shank_cm","shank_measured","goal_enabled","goal_rom_min_deg","goal_rom_max_deg","goal_cadence_spm","goal_cadence_tolerance_spm","algo"];
     data="\ufeff"+cols.join(",")+"\r\n"+h.map(x=>cols.map(k=>csvCell(x[k])).join(",")).join("\r\n");
     mime="text/csv;charset=utf-8";name="alwaysbea-training-history.csv";
   }
@@ -702,7 +711,8 @@ function renderTraining(t){
   document.getElementById("trainState").textContent=stateText;
   metric("cadenceVal",t.cadence_spm,0,"");
   metric("romVal",t.rom_last_deg,1,"°");
-  metric("stepLengthVal",t.step_cm_est,1,"");
+  const distanceCm=num(t.distance_cm_est,num(t.step_avg_cm_est,0)*num(t.steps,0));
+  document.getElementById("stepLengthVal").textContent=fmtDistance(distanceCm);
   metric("lateralVal",t.lateral_deg,1,"°",true);
   metric("interventionVal",t.intervention_mean_pct,0,"%",true);
   metric("cycleVal",t.cycle_s,1,"");
@@ -735,12 +745,12 @@ function renderTraining(t){
   const legText=t.leg_cm_est>0?t.leg_cm_est.toFixed(1):"--";
   const shankText=t.shank_cm>0?t.shank_cm.toFixed(1):"--";
   document.getElementById("profileInfo").textContent="估算腿长 "+legText+" cm · 小腿长 "+shankText+
-    " cm。步长是小腿角度对应的等效弦长，不是足跟实测距离。";
+    " cm。行走距离按每一步小腿角度对应的等效弦长累计，不是足跟实测距离。";
   document.getElementById("lengthMode").textContent=t.shank_measured?"实测小腿长":(t.height_cm>0?"身高估算":"待输入身高");
   document.getElementById("profileShortcutValue").textContent=missingProfile
-    ? "请先录入身高，用于估算腿长和等效步长"
+    ? "请先录入身高，用于估算腿长和行走距离"
     : (t.height_cm.toFixed(1)+" cm · 小腿长 "+shankText+" cm · "+(t.shank_measured?"实测":"身高估算"));
-  document.getElementById("myAlgorithm").textContent=t.algo||"single-leg-mvp-0.1";
+  document.getElementById("myAlgorithm").textContent=t.algo||"single-leg-mvp-0.2";
   if(document.activeElement!==document.getElementById("heightInput")) document.getElementById("heightInput").value=t.height_cm>0?t.height_cm.toFixed(1):"";
   if(document.activeElement!==document.getElementById("shankInput")) document.getElementById("shankInput").value=t.shank_measured?t.shank_cm.toFixed(1):"0";
   const start=document.getElementById("trainStart");
@@ -757,7 +767,11 @@ function renderTraining(t){
   saveFinishedSession(t);
 }
 function pollTraining(){
-  fetch("/api/training/status").then(r=>r.json()).then(renderTraining).catch(()=>{});
+  if(trainingPollPending)return Promise.resolve();
+  trainingPollPending=true;
+  return fetch("/api/training/status",{cache:"no-store"})
+    .then(r=>r.json()).then(renderTraining).catch(()=>{})
+    .finally(()=>{trainingPollPending=false;});
 }
 document.getElementById("saveProfile").addEventListener("click",async()=>{
   const h=+document.getElementById("heightInput").value;
@@ -843,7 +857,11 @@ function renderCapture(c){
   labelEl.disabled=c.state!=="empty";
 }
 function pollCapture(){
-  fetch("/api/capture/status").then(r=>r.json()).then(renderCapture).catch(()=>{});
+  if(capturePollPending)return Promise.resolve();
+  capturePollPending=true;
+  return fetch("/api/capture/status",{cache:"no-store"})
+    .then(r=>r.json()).then(renderCapture).catch(()=>{})
+    .finally(()=>{capturePollPending=false;});
 }
 function captureFileName(labelOverride){
   const label=labelOverride||document.getElementById("captureLabel").value;
@@ -1010,7 +1028,7 @@ document.getElementById("btnZero").addEventListener("click", ()=>{
 /* ---------- 三模式切换（助力/主动/阻抗） ---------- */
 const MODE_UI=[
   {
-    text:"中间推进器辅助完成抬腿，左右电机维持横向腿位，适合需要外部助力完成动作的训练。",
+    text:"适合需要外部助力完成动作的训练。",
     drive:"主推进辅助",stab:"左右腿位纠偏",focus:"关注完成质量",
     safety:"助力会驱动中间推进器。开始前请确认助力方向和幅度，并确保有治疗人员或保护人员在场。"
   },
@@ -1259,7 +1277,9 @@ cv3d.addEventListener("pointercancel",()=>cv3d._d=false);
 
 /* ---------- 状态轮询 ---------- */
 function poll(){
-  fetch("/api/status").then(r=>r.json()).then(s=>{
+  if(statusPollPending)return Promise.resolve();
+  statusPollPending=true;
+  return fetch("/api/status",{cache:"no-store"}).then(r=>r.json()).then(s=>{
     online = true;
     dot.classList.add("on");
     conn.textContent = "已连接";
@@ -1323,11 +1343,11 @@ function poll(){
     document.getElementById("myImu").textContent="状态未知";
     calPill.textContent = "未知";
     calPill.classList.remove("cal");
-  });
+  }).finally(()=>{statusPollPending=false;});
 }
 async function restoreSettings(){
   try{
-    const current=await fetch("/api/training/status").then(r=>r.json());
+    const current=await fetch("/api/training/status",{cache:"no-store"}).then(r=>r.json());
     renderTraining(current);
     if(current.state==="running"||current.state==="paused")return;
     const p=JSON.parse(localStorage.getItem("alwaysbea_profile")||"null");
@@ -1349,14 +1369,15 @@ async function restoreSettings(){
     pollTraining();
   }catch(e){}
 }
-setInterval(poll, 500);
-setInterval(pollTraining, 500);
-setInterval(pollCapture, 1000);
+function schedulePoll(fn,delayMs){
+  const tick=()=>Promise.resolve().then(fn).finally(()=>setTimeout(tick,delayMs));
+  tick();
+}
 showPage("training",false);
 renderMode(curMode);
-poll();
-pollTraining();
-pollCapture();
+schedulePoll(poll,100);          /* 姿态/三路输出：10 Hz */
+schedulePoll(pollTraining,200);  /* 训练摘要：5 Hz */
+schedulePoll(pollCapture,1000);  /* 标定面板：1 Hz */
 renderHistory();
 setTimeout(restoreSettings,800);
 animate3d();

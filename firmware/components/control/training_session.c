@@ -93,6 +93,7 @@ typedef struct {
     float peakLateralDeg;
     float interventionTimeMs;
     float correctionLoad;
+    float trajectoryScoreSum;
     float measuredShankCm;
     uint32_t fallStageStartedMs;
     uint32_t fallStableStartedMs;
@@ -114,6 +115,29 @@ static float absf(float v)
 static float maxf(float a, float b)
 {
     return (a > b) ? a : b;
+}
+
+static float clampf(float value, float low, float high)
+{
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
+
+/* 范围内记满分，越界后按偏离程度连续衰减到 0。
+ * 相比“整步合格/不合格”的二元评分，小幅越界不会让整次达标率骤降。 */
+static float band_score(float value, float low, float high,
+                        float zeroLow, float zeroHigh)
+{
+    if (value >= low && value <= high) return 100.0f;
+    if (value < low) {
+        const float span = low - zeroLow;
+        if (span <= 0.0f) return 0.0f;
+        return 100.0f * clampf((value - zeroLow) / span, 0.0f, 1.0f);
+    }
+    const float span = zeroHigh - high;
+    if (span <= 0.0f) return 0.0f;
+    return 100.0f * clampf((zeroHigh - value) / span, 0.0f, 1.0f);
 }
 
 static float vector3_magnitude(float x, float y, float z)
@@ -231,6 +255,37 @@ static void finish_cycle_locked(const training_sample_t *s, float excursion,
         if (instantCadence > cadenceHigh) quality |= TRAIN_QUALITY_CADENCE_HIGH;
     }
 
+    const float romScore = band_score(rom, romMin, romMax,
+                                      TRAIN_LIFT_START_DEG,
+                                      TRAIN_ABSOLUTE_ROM_MAX_DEG);
+    const float speedScore = band_score(meanSpeed,
+                                        TRAIN_SPEED_MIN_DPS,
+                                        TRAIN_SPEED_MAX_DPS,
+                                        0.0f, TRAIN_SPEED_MAX_DPS * 2.0f);
+    const float lateralScore = band_score(s_train.peakLateralDeg,
+                                          0.0f, TRAIN_LATERAL_TARGET_DEG,
+                                          0.0f, TRAIN_LATERAL_TARGET_DEG * 2.0f);
+    const float returnScore = band_score(returnError,
+                                         0.0f, TRAIN_RETURN_WINDOW_DEG,
+                                         0.0f, TRAIN_RETURN_COMPLETE_DEG);
+    const float cycleScore = band_score((float)cycleMs,
+                                        (float)TRAIN_CYCLE_MIN_MS,
+                                        (float)TRAIN_CYCLE_MAX_MS,
+                                        0.0f, (float)TRAIN_CYCLE_MAX_MS * 2.0f);
+    float cadenceScore = 100.0f;
+    if (s_train.pub.goalEnabled && instantCadence > 0.0f) {
+        const float tolerance = s_train.pub.goalCadenceToleranceSpm;
+        const float cadenceLow = s_train.pub.goalCadenceSpm - tolerance;
+        const float cadenceHigh = s_train.pub.goalCadenceSpm + tolerance;
+        cadenceScore = band_score(instantCadence, cadenceLow, cadenceHigh,
+                                  maxf(0.0f, cadenceLow - 2.0f * tolerance),
+                                  cadenceHigh + 2.0f * tolerance);
+    }
+    /* ROM 30%、速度 20%、横向轨迹 20%、回位 15%、周期 10%、目标步频 5%。 */
+    const float trajectoryScore =
+        0.30f * romScore + 0.20f * speedScore + 0.20f * lateralScore +
+        0.15f * returnScore + 0.10f * cycleScore + 0.05f * cadenceScore;
+
     s_train.pub.steps++;
     if (quality == 0U) s_train.pub.qualifiedSteps++;
     s_train.pub.lastQualityFlags = quality;
@@ -244,7 +299,10 @@ static void finish_cycle_locked(const training_sample_t *s, float excursion,
     const float n = (float)s_train.pub.steps;
     s_train.pub.averageRomDeg += (rom - s_train.pub.averageRomDeg) / n;
     update_body_estimates_locked();
-    s_train.pub.qualifiedPct = 100.0f * (float)s_train.pub.qualifiedSteps / n;
+    s_train.pub.totalEstimatedDistanceCm += s_train.pub.lastEstimatedStepCm;
+    s_train.pub.lastTrajectoryScorePct = trajectoryScore;
+    s_train.trajectoryScoreSum += trajectoryScore;
+    s_train.pub.qualifiedPct = s_train.trajectoryScoreSum / n;
     s_train.lastStepMs = endMs;
     set_event_locked((quality == 0U) ? "step_qualified" : "step_completed");
     (void)s;

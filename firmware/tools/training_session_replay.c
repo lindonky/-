@@ -95,6 +95,10 @@ int main(void)
     assert(s.qualifiedSteps == 1U);
     assert(s.lastRomDeg > 24.0f && s.lastRomDeg < 26.0f);
     assert(s.lastEstimatedStepCm > 17.0f && s.lastEstimatedStepCm < 19.0f);
+    assert(s.totalEstimatedDistanceCm > 17.0f &&
+           s.totalEstimatedDistanceCm < 19.0f);
+    assert(s.lastTrajectoryScorePct > 99.0f);
+    assert(s.qualifiedPct > 99.0f);
 
     /* Less than the 8-degree start threshold must not count. */
     cycle(6.0f, 1.0f);
@@ -107,7 +111,11 @@ int main(void)
     assert(s.steps == 2U);
     assert(s.qualifiedSteps == 1U);
     assert((s.lastQualityFlags & TRAIN_QUALITY_LATERAL) != 0U);
-    assert(fabsf(s.qualifiedPct - 50.0f) < 0.1f);
+    assert(s.totalEstimatedDistanceCm > 35.0f &&
+           s.totalEstimatedDistanceCm < 38.0f);
+    assert(s.lastTrajectoryScorePct > 90.0f &&
+           s.lastTrajectoryScorePct < 100.0f);
+    assert(s.qualifiedPct > 95.0f && s.qualifiedPct < 100.0f);
 
     /* Returning inside the 8-degree completion band but outside the 5-degree
      * quality target completes the cycle and records a return error. */
@@ -115,6 +123,8 @@ int main(void)
     s = status();
     assert(s.steps == 3U);
     assert((s.lastQualityFlags & TRAIN_QUALITY_RETURN) != 0U);
+    assert(s.lastTrajectoryScorePct > 90.0f &&
+           s.lastTrajectoryScorePct < 100.0f);
 
     /* A new optional target is atomic, survives session start and contributes
      * cadence-specific quality flags without weakening hard safety limits. */

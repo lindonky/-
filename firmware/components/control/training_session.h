@@ -7,7 +7,7 @@
  *
  * JY61P 安装在小腿中部：pitch 用作抬腿主运动轴，roll 用作横向偏移轴。
  * 一步 = 离开中立位 -> 峰值 -> 回到中立位的一次完整周期。
- * 这里的 ROM/达标率/等效步长都是小腿轨迹工程指标，不是膝关节临床量。
+ * 这里的 ROM/达标率/行走距离都是小腿轨迹工程指标，不是膝关节临床量。
  */
 
 typedef enum {
@@ -93,7 +93,9 @@ typedef struct {
     float lastReturnErrorDeg;
     float lastEstimatedStepCm;
     float averageEstimatedStepCm;
-    float qualifiedPct;
+    float totalEstimatedDistanceCm; /* 每个完整周期的等效步长累计 */
+    float lastTrajectoryScorePct;   /* 本步连续轨迹评分，0..100 */
+    float qualifiedPct;             /* 会话连续轨迹评分均值，0..100 */
 
     /* 设备作用代理指标；均为无量纲/工程指数，不是力、力矩或功率 */
     float interventionMeanPct;

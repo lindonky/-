@@ -27,7 +27,8 @@ void app_main(void)
     calibration_capture_init();
     cmd_parser_init();
 
-    xTaskCreate(thruster_task, "thruster", 4096, NULL, 5, NULL);
+    /* ESP32-S3 双核分工：Wi-Fi/HTTP 在 Core 0，电机缓动与姿态控制在 Core 1。 */
+    xTaskCreatePinnedToCore(thruster_task, "thruster", 4096, NULL, 5, NULL, 1);
 
     transport_uart_init();
     transport_bt_init();

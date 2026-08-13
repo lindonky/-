@@ -293,8 +293,8 @@ void stabilize_init(void)
     s_status.enabled = false;
 #endif
 
-    xTaskCreate(imu_rx_task, "imu_rx", 3072, NULL, 6, NULL);
-    xTaskCreate(control_task, "stab", 3072, NULL, 4, NULL);
+    xTaskCreatePinnedToCore(imu_rx_task, "imu_rx", 3072, NULL, 6, NULL, 1);
+    xTaskCreatePinnedToCore(control_task, "stab", 3072, NULL, 4, NULL, 1);
     ESP_LOGI(TAG, "stabilization ready (period %dms, deadband %ddeg, max %ddeg)",
              CONFIG_STAB_PERIOD_MS, CONFIG_STAB_DEADBAND_DEG,
              CONFIG_STAB_MAX_ANGLE_DEG);

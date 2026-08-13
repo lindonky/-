@@ -106,6 +106,7 @@ static esp_err_t handle_status(httpd_req_t *req)
         thruster_get_speed(2), (unsigned long)thruster_get_current_pulse(2),
         (unsigned long)thruster_get_target_pulse(2));
     httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_send(req, buf, len);
     return ESP_OK;
 }
@@ -119,15 +120,15 @@ static esp_err_t handle_training_status(httpd_req_t *req)
     char buf[2048];
     const int len = snprintf(
         buf, sizeof(buf),
-        "{\"algo\":\"single-leg-mvp-0.1\",\"device_boot\":%lu,\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
-        "\"steps\":%lu,\"qualified\":%lu,\"invalid\":%lu,\"score_pct\":%.1f,"
+        "{\"algo\":\"single-leg-mvp-0.2\",\"device_boot\":%lu,\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
+        "\"steps\":%lu,\"qualified\":%lu,\"invalid\":%lu,\"score_pct\":%.1f,\"last_score_pct\":%.1f,"
         "\"rom_last_deg\":%.1f,\"rom_avg_deg\":%.1f,\"peak_speed_dps\":%.1f,"
         "\"cycle_s\":%.2f,\"lift_s\":%.2f,\"return_s\":%.2f,\"cadence_spm\":%.1f,"
         "\"lateral_deg\":%.1f,\"return_error_deg\":%.1f,"
         "\"height_cm\":%.1f,\"leg_cm_est\":%.1f,\"shank_cm\":%.1f,\"shank_measured\":%d,"
         "\"goal_enabled\":%d,\"goal_rom_min_deg\":%.1f,\"goal_rom_max_deg\":%.1f,"
         "\"goal_cadence_spm\":%.1f,\"goal_cadence_tolerance_spm\":%.1f,"
-        "\"step_cm_est\":%.1f,\"step_avg_cm_est\":%.1f,"
+        "\"step_cm_est\":%.1f,\"step_avg_cm_est\":%.1f,\"distance_cm_est\":%.1f,"
         "\"intervention_mean_pct\":%.1f,\"intervention_peak_pct\":%.1f,\"correction_load_index\":%.1f,"
         "\"quality_flags\":%lu,\"fall_stage\":%u,\"fall_events\":%lu,"
         "\"accel_g\":%.2f,\"gyro_dps\":%.1f,\"fall_tilt_deg\":%.1f,\"event\":\"%s\","
@@ -138,6 +139,7 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         (unsigned long)ts.sessionId, (unsigned long)ts.elapsedMs, ts.mode,
         (unsigned long)ts.steps, (unsigned long)ts.qualifiedSteps,
         (unsigned long)ts.invalidCycles, ts.qualifiedPct,
+        ts.lastTrajectoryScorePct,
         ts.lastRomDeg, ts.averageRomDeg, ts.lastPeakSpeedDps,
         ts.lastCycleSec, ts.lastLiftSec, ts.lastReturnSec, ts.cadenceSpm,
         ts.lastLateralDeg, ts.lastReturnErrorDeg,
@@ -145,6 +147,7 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         (int)ts.goalEnabled, ts.goalRomMinDeg, ts.goalRomMaxDeg,
         ts.goalCadenceSpm, ts.goalCadenceToleranceSpm,
         ts.lastEstimatedStepCm, ts.averageEstimatedStepCm,
+        ts.totalEstimatedDistanceCm,
         ts.interventionMeanPct, ts.interventionPeakPct, ts.correctionLoadIndex,
         (unsigned long)ts.lastQualityFlags, (unsigned int)ts.fallStage,
         (unsigned long)ts.fallEvents, ts.lastAccelMagnitudeG,
@@ -155,6 +158,7 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         CONFIG_TRAIN_CYCLE_MIN_MS, CONFIG_TRAIN_CYCLE_MAX_MS,
         CONFIG_TRAIN_LATERAL_MAX_DEG, CONFIG_TRAIN_RETURN_WINDOW_DEG);
     httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_send(req, buf, (len > 0 && len < (int)sizeof(buf)) ? len : HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
@@ -340,6 +344,7 @@ static void http_server_init(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.stack_size       = 6144;
+    cfg.core_id          = 0; /* Wi-Fi/HTTP 留在 Core 0，实时控制固定到 Core 1。 */
 
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
