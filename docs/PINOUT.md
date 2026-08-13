@@ -1,8 +1,6 @@
 # AlwaysbeA 单腿康复设备引脚与接线说明
 
-> 文档日期：2026-08-13  
-> 适用对象：当前 ESP32-S3 QFN56 / 8 MB PSRAM 单腿原型，以及已烧录的 `single-leg-mvp-0.3` 固件
-> 当前固件镜像 SHA-256：`6D7B36327372B98803DFFBB1F744C4A4CC4C2F5CDF085E0BA8AC83CB30699643`
+> 适用硬件：ESP32-S3 QFN56 / 8 MB PSRAM 单腿原型
 
 本文以当前仓库的 `firmware/sdkconfig`、BSP 驱动和 ESP32-S3 芯片固定接口为准。表中的 GPIO 是 ESP32-S3 芯片 GPIO 编号，不是某块开发板丝印的排针序号；实际排针位置必须再对照所用开发板的正反面丝印或原理图。
 
@@ -113,14 +111,14 @@ ESP32 GND            ────── CH340 GND
 | ESP RX | GPIO44 |
 | 波特率 | 115200 |
 | 数据格式 | 8N1，无流控 |
-| Windows 当前枚举 | `COM37`，VID/PID `1A86:7523` |
+| 端口名称 | 由操作系统动态分配 |
 
-COM 号是 Windows 动态分配结果，不属于硬件引脚，重新插拔或换 USB 口后可能变化。本机最近一次烧录后，CH340 已枚举但没有回读到应用命令文本；因此 UART0 的芯片引脚和固件配置是确定的，CH340 到实体板的 TX/RX/自动下载电路仍应结合原理图或万用表继续核对。
+COM 号由操作系统动态分配，重新插拔或更换 USB 口后可能变化。CH340 到实体板的 TX/RX 和自动下载电路仍应结合开发板原理图核对。
 
 调试时优先使用：
 
 ```powershell
-python firmware/tools/serial_ctl.py COM37 --send "STATUS" -t 5
+python firmware/tools/serial_ctl.py COMxx --send "STATUS" -t 5
 ```
 
 该工具会在打开端口前关闭 DTR/RTS，减少自动下载电路把芯片复位进下载模式的风险。
@@ -136,9 +134,7 @@ ESP32-S3 的原生 USB 引脚是芯片固定功能：
 | USB VBUS | 开发板 USB 供电/检测电路 | 不是普通 GPIO |
 | USB GND | GND | 公共地 |
 
-本机最近一次枚举为 `COM39`，VID/PID `303A:1001`，芯片 MAC `E0:72:A1:F7:0A:B4`。该 COM 号同样可能变化。
-
-当前固件启用了 USB-Serial/JTAG 作为辅助控制台，但普通串口软件打开原生 USB 端口时可能切换 DTR/RTS 并触发 USB 复位/下载模式。烧录使用 `COM39`；普通命令调试优先使用 CH340。GPIO19/20 不得同时分配给电机、传感器或其他普通 GPIO 功能，否则会破坏原生 USB。
+当前固件启用了 USB-Serial/JTAG 作为辅助控制台，但普通串口软件打开原生 USB 端口时可能切换 DTR/RTS 并触发 USB 复位/下载模式。烧录使用系统枚举出的原生 USB 端口；普通命令调试优先使用 CH340。GPIO19/20 不得同时分配给电机、传感器或其他普通 GPIO 功能，否则会破坏原生 USB。
 
 ## 6. BOOT、RESET 与启动状态
 

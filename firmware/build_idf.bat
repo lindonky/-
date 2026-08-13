@@ -8,8 +8,8 @@ rem ESP-IDF kconfgen reads project Kconfig files through Python's locale.
 rem Force UTF-8 so Chinese comments/labels build correctly on GBK Windows.
 set "PYTHONUTF8=1"
 
-rem Prefer an existing ESP-IDF environment. This fallback matches the original
-rem development machine and can be overridden by setting IDF_PATH beforehand.
+rem Prefer an existing ESP-IDF environment. Fall back to the standard Windows
+rem installer path; override it by setting IDF_PATH beforehand.
 if not defined IDF_PATH set "IDF_PATH=C:\Espressif\frameworks\esp-idf-v5.1.2"
 if not defined IDF_TOOLS_PATH set "IDF_TOOLS_PATH=C:\Espressif"
 if not defined IDF_PYTHON_ENV_PATH if exist "%IDF_TOOLS_PATH%\python_env\idf5.1_py3.11_env\Scripts\python.exe" set "IDF_PYTHON_ENV_PATH=%IDF_TOOLS_PATH%\python_env\idf5.1_py3.11_env"

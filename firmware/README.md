@@ -2,7 +2,7 @@
 
 该目录是 AlwaysbeA 水下康复机械下肢控制系统的 ESP32-S3 固件，基于 ESP-IDF v5.1.2。
 
-完整系统说明及安全注意事项见仓库根目录的 `README.md` 和 `docs/HANDOVER.md`。
+完整系统说明及安全注意事项见仓库根目录的 `README.md`。
 
 ## 主要功能
 
@@ -22,7 +22,7 @@
 .\build_idf.bat build
 ```
 
-脚本优先使用环境中的 `IDF_PATH`；若未设置，会尝试开发机原始默认位置 `C:\Espressif\frameworks\esp-idf-v5.1.2`。
+脚本优先使用环境中的 `IDF_PATH`；若未设置，会尝试 ESP-IDF Windows 安装器的常见路径 `C:\Espressif\frameworks\esp-idf-v5.1.2`。
 
 也可以先进入 ESP-IDF 命令环境，再直接运行：
 
@@ -35,7 +35,7 @@ idf.py build
 烧录前确认当前 USB-Serial-JTAG 的 COM 号。设备复位后端口号可能改变。
 
 ```powershell
-.\build_idf.bat -p COM39 flash
+.\build_idf.bat -p COMxx flash
 ```
 
 CH340 端口主要用于 UART0 控制台；USB-Serial-JTAG 端口适合自动复位烧录。
@@ -135,8 +135,8 @@ CAL
 
 ```powershell
 pip install pyserial
-python tools/serial_ctl.py COM37
-python tools/serial_ctl.py COM37 --send "STATUS"
+python tools/serial_ctl.py COMxx
+python tools/serial_ctl.py COMxx --send "STATUS"
 ```
 
 JY61P 若有接收字节但有效帧始终为零，优先检查模块波特率是否为 9600。

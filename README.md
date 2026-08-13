@@ -24,7 +24,7 @@
 .
 ├── firmware/       ESP32-S3 固件、内嵌网页和串口调试工具
 ├── android/        AlwaysbeA Android App
-└── docs/           工程交接、接线、构建和安全说明
+└── docs/           产品需求、算法标定和接线说明
 ```
 
 ## 硬件接线
@@ -53,14 +53,14 @@ cd firmware
 烧录前在设备管理器确认当前 USB-Serial-JTAG COM 号：
 
 ```powershell
-.\build_idf.bat -p COM39 flash
+.\build_idf.bat -p COMxx flash
 ```
 
 也可以先进入已配置好的 ESP-IDF 环境，然后在 `firmware` 目录直接执行：
 
 ```powershell
 idf.py build
-idf.py -p COM39 flash
+idf.py -p COMxx flash
 ```
 
 ## 快速构建 Android App
@@ -107,11 +107,10 @@ CAL
 详细说明：
 
 - [产品需求基线与开发路线](docs/PRODUCT_REQUIREMENTS.md)
-- [持续开发日志](docs/DEVELOPMENT_LOG.md)
 - [单腿训练指标与安全算法依据](docs/ALGORITHM_BASIS.md)
 - [JY61P 单腿标定数据采集手册](docs/CALIBRATION_CAPTURE.md)
 - [2026-08-13 四类动作样本与跌倒阈值分析](docs/CALIBRATION_ANALYSIS_20260813.md)
-- [工程交接说明](docs/HANDOVER.md)
+- [设备引脚与接线说明](docs/PINOUT.md)
 - [固件说明](firmware/README.md)
 
 ## 安全规则
