@@ -13,6 +13,10 @@
 #define CONFIG_TRAIN_CYCLE_MIN_MS 800
 #define CONFIG_TRAIN_CYCLE_MAX_MS 8000
 #define CONFIG_TRAIN_LATERAL_MAX_DEG 8
+#define CONFIG_TRAIN_FALL_ANGLE_DEG 65
+#define CONFIG_TRAIN_FALL_ANGLE_HOLD_MS 400
+#define CONFIG_TRAIN_FALL_ACCEL_LOW_MG 550
+#define CONFIG_TRAIN_FALL_ACCEL_HIGH_MG 1600
 #endif
 #define TRAIN_LOCK() ((void)0)
 #define TRAIN_UNLOCK() ((void)0)
@@ -53,18 +57,12 @@
 #define TRAIN_GOAL_CADENCE_TOL_PCT   0.15f
 #define TRAIN_GOAL_CADENCE_TOL_MIN   3.0f
 
-/* 初始跌倒候选阈值。传感器位于小腿且工作于水下，必须用实测数据重标定。
- * 只有“低加速度/冲击 + 高角速度 + 大姿态变化 + 随后稳定”组合才会确认。 */
-#define FALL_LOW_ACCEL_G             0.60f
-#define FALL_IMPACT_ACCEL_G          2.20f
-#define FALL_TRIGGER_GYRO_DPS        100.0f
-#define FALL_POSTURE_TILT_DEG        45.0f
-#define FALL_STABLE_GYRO_DPS         18.0f
-#define FALL_STABLE_ACCEL_MIN_G      0.70f
-#define FALL_STABLE_ACCEL_MAX_G      1.35f
-#define FALL_IMPACT_WINDOW_MS        900U
-#define FALL_CONFIRM_WINDOW_MS       2500U
-#define FALL_STABLE_HOLD_MS          800U
+/* 小腿中部 JY61P 的工程安全阈值；仍需更多水下正/负样本重标定。
+ * 持续大角度和异常合加速度是两条独立的急停确认路径。 */
+#define FALL_ANGLE_TRIGGER_DEG       ((float)CONFIG_TRAIN_FALL_ANGLE_DEG)
+#define FALL_ANGLE_HOLD_MS           ((uint32_t)CONFIG_TRAIN_FALL_ANGLE_HOLD_MS)
+#define FALL_ACCEL_LOW_G             ((float)CONFIG_TRAIN_FALL_ACCEL_LOW_MG / 1000.0f)
+#define FALL_ACCEL_HIGH_G            ((float)CONFIG_TRAIN_FALL_ACCEL_HIGH_MG / 1000.0f)
 
 #if CONFIG_TRAIN_ROM_MIN_DEG > CONFIG_TRAIN_ROM_MAX_DEG
 #error "TRAIN_ROM_MIN_DEG must not exceed TRAIN_ROM_MAX_DEG"
@@ -74,6 +72,15 @@
 #endif
 #if CONFIG_TRAIN_CYCLE_MIN_MS >= CONFIG_TRAIN_CYCLE_MAX_MS
 #error "TRAIN_CYCLE_MIN_MS must be less than TRAIN_CYCLE_MAX_MS"
+#endif
+#if CONFIG_TRAIN_FALL_ANGLE_DEG <= CONFIG_TRAIN_ROM_LIMIT_DEG
+#error "TRAIN_FALL_ANGLE_DEG must exceed TRAIN_ROM_LIMIT_DEG"
+#endif
+#if CONFIG_TRAIN_FALL_ACCEL_LOW_MG >= 1000
+#error "TRAIN_FALL_ACCEL_LOW_MG must be below normal gravity"
+#endif
+#if CONFIG_TRAIN_FALL_ACCEL_HIGH_MG <= 1000
+#error "TRAIN_FALL_ACCEL_HIGH_MG must be above normal gravity"
 #endif
 
 typedef struct {
@@ -95,8 +102,7 @@ typedef struct {
     float correctionLoad;
     float trajectoryScoreSum;
     float measuredShankCm;
-    uint32_t fallStageStartedMs;
-    uint32_t fallStableStartedMs;
+    uint32_t fallAngleStartedMs;
     float fallReferencePitchDeg;
     float fallReferenceRollDeg;
     bool fallPending;
@@ -205,8 +211,7 @@ static uint32_t elapsed_locked(uint32_t nowMs)
 static void reset_fall_locked(void)
 {
     s_train.pub.fallStage = 0U;
-    s_train.fallStageStartedMs = 0U;
-    s_train.fallStableStartedMs = 0U;
+    s_train.fallAngleStartedMs = 0U;
 }
 
 static void finish_cycle_locked(const training_sample_t *s, float excursion,
@@ -308,6 +313,17 @@ static void finish_cycle_locked(const training_sample_t *s, float excursion,
     (void)s;
 }
 
+static void confirm_fall_locked(const training_sample_t *s, const char *event)
+{
+    s_train.pub.fallStage = 3U;
+    s_train.pub.fallEvents++;
+    s_train.fallPending = true;
+    s_train.pub.state = TRAIN_STATE_PAUSED;
+    s_train.pauseStartedMs = s->nowMs;
+    clear_cycle_locked();
+    set_event_locked(event);
+}
+
 static void update_fall_locked(const training_sample_t *s, float accelMag,
                                float gyroMag)
 {
@@ -318,55 +334,23 @@ static void update_fall_locked(const training_sample_t *s, float accelMag,
     s_train.pub.lastGyroMagnitudeDps = gyroMag;
     s_train.pub.lastFallTiltDeg = tilt;
 
-    switch (s_train.pub.fallStage) {
-    case 0:
-        if ((accelMag < FALL_LOW_ACCEL_G && gyroMag > FALL_TRIGGER_GYRO_DPS) ||
-            (accelMag > FALL_IMPACT_ACCEL_G && gyroMag > FALL_TRIGGER_GYRO_DPS)) {
-            s_train.pub.fallStage = (accelMag > FALL_IMPACT_ACCEL_G) ? 2U : 1U;
-            s_train.fallStageStartedMs = s->nowMs;
-            set_event_locked("fall_candidate");
+    /* 两条独立安全通道：异常合加速度立即确认；大角度持续确认，
+     * 避免正常抬腿或短暂侧偏误锁存。 */
+    if (accelMag <= FALL_ACCEL_LOW_G || accelMag >= FALL_ACCEL_HIGH_G) {
+        confirm_fall_locked(s, "suspected_fall_accel");
+        return;
+    }
+
+    if (tilt >= FALL_ANGLE_TRIGGER_DEG) {
+        if (s_train.pub.fallStage != 1U) {
+            s_train.pub.fallStage = 1U;
+            s_train.fallAngleStartedMs = s->nowMs;
+            set_event_locked("fall_angle_candidate");
+        } else if ((s->nowMs - s_train.fallAngleStartedMs) >= FALL_ANGLE_HOLD_MS) {
+            confirm_fall_locked(s, "suspected_fall_angle");
         }
-        break;
-    case 1: /* 低加速度/快速旋转后等待冲击 */
-        if (accelMag > FALL_IMPACT_ACCEL_G) {
-            s_train.pub.fallStage = 2U;
-            s_train.fallStageStartedMs = s->nowMs;
-        } else if (tilt >= FALL_POSTURE_TILT_DEG &&
-                   gyroMag <= FALL_STABLE_GYRO_DPS &&
-                   accelMag >= FALL_STABLE_ACCEL_MIN_G &&
-                   accelMag <= FALL_STABLE_ACCEL_MAX_G) {
-            /* 水的缓冲可能没有陆地式强冲击：明显姿态改变后直接进入
-             * 持续确认阶段，仍要求 0.8s 静止以抑制快速抬腿误报。 */
-            s_train.pub.fallStage = 2U;
-            s_train.fallStableStartedMs = s->nowMs;
-        } else if ((s->nowMs - s_train.fallStageStartedMs) > FALL_IMPACT_WINDOW_MS) {
-            reset_fall_locked();
-        }
-        break;
-    case 2: /* 冲击后等待显著姿态改变并趋于静止 */
-        if ((s->nowMs - s_train.fallStageStartedMs) > FALL_CONFIRM_WINDOW_MS) {
-            reset_fall_locked();
-        } else if (tilt >= FALL_POSTURE_TILT_DEG &&
-                   gyroMag <= FALL_STABLE_GYRO_DPS &&
-                   accelMag >= FALL_STABLE_ACCEL_MIN_G &&
-                   accelMag <= FALL_STABLE_ACCEL_MAX_G) {
-            if (s_train.fallStableStartedMs == 0U) {
-                s_train.fallStableStartedMs = s->nowMs;
-            } else if ((s->nowMs - s_train.fallStableStartedMs) >= FALL_STABLE_HOLD_MS) {
-                s_train.pub.fallStage = 3U;
-                s_train.pub.fallEvents++;
-                s_train.fallPending = true;
-                s_train.pub.state = TRAIN_STATE_PAUSED;
-                s_train.pauseStartedMs = s->nowMs;
-                clear_cycle_locked();
-                set_event_locked("suspected_fall");
-            }
-        } else {
-            s_train.fallStableStartedMs = 0U;
-        }
-        break;
-    default:
-        break;
+    } else if (s_train.pub.fallStage == 1U) {
+        reset_fall_locked();
     }
 }
 

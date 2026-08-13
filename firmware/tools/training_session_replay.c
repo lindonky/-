@@ -137,16 +137,24 @@ int main(void)
     assert(s.steps == 1U);
     assert((s.lastQualityFlags & TRAIN_QUALITY_CADENCE_HIGH) != 0U);
 
-    /* A lone impact without a sustained changed posture must not confirm a fall. */
-    feed(0.0f, 0.0f, 150.0f, 2.5f);
-    hold(0.0f, 0.0f, 2700U);
+    /* Acceleration is an independent immediate safety path. */
+    feed(0.0f, 0.0f, 0.0f, 1.7f);
+    s = status();
+    assert(s.fallEvents == 1U);
+    assert(s.state == TRAIN_STATE_PAUSED);
+    assert(training_session_take_fall_event());
+    assert(!training_session_take_fall_event());
+
+    /* The angle path rejects a brief excursion, then confirms 65+ degrees
+     * only after the configured 400 ms hold. */
+    assert(training_session_stop(s_now));
+    assert(training_session_start(s_now, 0.0f, 0.0f, 1, true, false));
+    hold(68.0f, 0.0f, 300U);
+    hold(0.0f, 0.0f, 100U);
     s = status();
     assert(s.fallEvents == 0U);
     assert(!training_session_take_fall_event());
-
-    /* Impact + large posture change + 0.8 s stable posture confirms once. */
-    feed(0.0f, 0.0f, 150.0f, 2.5f);
-    for (int i = 0; i < 20; i++) feed(50.0f, 0.0f, 0.0f, 1.0f);
+    hold(68.0f, 0.0f, 450U);
     s = status();
     assert(s.fallEvents == 1U);
     assert(s.state == TRAIN_STATE_PAUSED);

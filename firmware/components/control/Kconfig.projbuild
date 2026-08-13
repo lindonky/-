@@ -164,6 +164,36 @@ menu "ESC Control"
             default 5
             range 2 15
 
+        config TRAIN_FALL_ANGLE_DEG
+            int "Fall angle threshold relative to session start (deg)"
+            default 65
+            range 35 85
+            help
+                Latch emergency stop when either relative pitch or roll stays
+                beyond this angle for TRAIN_FALL_ANGLE_HOLD_MS. This threshold
+                must remain above TRAIN_ROM_LIMIT_DEG or the build will fail.
+
+        config TRAIN_FALL_ANGLE_HOLD_MS
+            int "Fall angle confirmation time (ms)"
+            default 400
+            range 100 2000
+
+        config TRAIN_FALL_ACCEL_LOW_MG
+            int "Free-fall acceleration threshold (milli-g)"
+            default 550
+            range 100 900
+            help
+                A resultant acceleration at or below this value immediately
+                latches emergency stop while a training session is running.
+
+        config TRAIN_FALL_ACCEL_HIGH_MG
+            int "Impact acceleration threshold (milli-g)"
+            default 1600
+            range 1100 4000
+            help
+                A resultant acceleration at or above this value immediately
+                latches emergency stop while a training session is running.
+
     endmenu
 
     config CAPTURE_MAX_SAMPLES

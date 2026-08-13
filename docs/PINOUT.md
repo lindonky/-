@@ -1,8 +1,8 @@
 # AlwaysbeA 单腿康复设备引脚与接线说明
 
 > 文档日期：2026-08-13  
-> 适用对象：当前 ESP32-S3 QFN56 / 8 MB PSRAM 单腿原型，以及已烧录的 `single-leg-mvp-0.2` 固件  
-> 当前固件镜像 SHA-256：`2020C1B27BAEC05C6C471BC87775BE32E54674FE906BF30FB3FCBD7C0AD56B2D`
+> 适用对象：当前 ESP32-S3 QFN56 / 8 MB PSRAM 单腿原型，以及已烧录的 `single-leg-mvp-0.3` 固件
+> 当前固件镜像 SHA-256：`6D7B36327372B98803DFFBB1F744C4A4CC4C2F5CDF085E0BA8AC83CB30699643`
 
 本文以当前仓库的 `firmware/sdkconfig`、BSP 驱动和 ESP32-S3 芯片固定接口为准。表中的 GPIO 是 ESP32-S3 芯片 GPIO 编号，不是某块开发板丝印的排针序号；实际排针位置必须再对照所用开发板的正反面丝印或原理图。
 

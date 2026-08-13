@@ -123,7 +123,7 @@ class DeviceState:
         if self.training_state == "running":
             phase = ("lifting", "returning", "settled")[(elapsed // 600) % 3]
         return {
-            "algo": "single-leg-mvp-0.2",
+            "algo": "single-leg-mvp-0.3",
             "device_boot": self.boot_id,
             "state": self.training_state,
             "phase": phase,
@@ -177,6 +177,10 @@ class DeviceState:
                 "cycle_max_ms": 8000,
                 "lateral_max_deg": 8,
                 "return_deg": 5,
+                "fall_angle_deg": 65,
+                "fall_angle_hold_ms": 400,
+                "fall_accel_low_g": 0.55,
+                "fall_accel_high_g": 1.60,
             },
         }
 

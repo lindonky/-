@@ -102,7 +102,7 @@ typedef struct {
     float interventionPeakPct;
     float correctionLoadIndex;
 
-    /* 跌倒候选证据 */
+    /* 跌倒证据：0=无，1=角度持续候选，3=已确认并请求急停 */
     uint8_t fallStage;
     float lastAccelMagnitudeG;
     float lastGyroMagnitudeDps;

@@ -120,7 +120,7 @@ static esp_err_t handle_training_status(httpd_req_t *req)
     char buf[2048];
     const int len = snprintf(
         buf, sizeof(buf),
-        "{\"algo\":\"single-leg-mvp-0.2\",\"device_boot\":%lu,\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
+        "{\"algo\":\"single-leg-mvp-0.3\",\"device_boot\":%lu,\"state\":\"%s\",\"phase\":\"%s\",\"id\":%lu,\"elapsed_ms\":%lu,\"mode\":%d,"
         "\"steps\":%lu,\"qualified\":%lu,\"invalid\":%lu,\"score_pct\":%.1f,\"last_score_pct\":%.1f,"
         "\"rom_last_deg\":%.1f,\"rom_avg_deg\":%.1f,\"peak_speed_dps\":%.1f,"
         "\"cycle_s\":%.2f,\"lift_s\":%.2f,\"return_s\":%.2f,\"cadence_spm\":%.1f,"
@@ -134,7 +134,9 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         "\"accel_g\":%.2f,\"gyro_dps\":%.1f,\"fall_tilt_deg\":%.1f,\"event\":\"%s\","
         "\"limits\":{\"lift_start_deg\":%d,\"rom_min_deg\":%d,\"rom_max_deg\":%d,"
         "\"rom_limit_deg\":%d,\"speed_min_dps\":%d,\"speed_max_dps\":%d,"
-        "\"cycle_min_ms\":%d,\"cycle_max_ms\":%d,\"lateral_max_deg\":%d,\"return_deg\":%d}}",
+        "\"cycle_min_ms\":%d,\"cycle_max_ms\":%d,\"lateral_max_deg\":%d,\"return_deg\":%d,"
+        "\"fall_angle_deg\":%d,\"fall_angle_hold_ms\":%d,"
+        "\"fall_accel_low_g\":%.2f,\"fall_accel_high_g\":%.2f}}",
         (unsigned long)s_boot_id, training_state_name(ts.state), training_phase_name(ts.phase),
         (unsigned long)ts.sessionId, (unsigned long)ts.elapsedMs, ts.mode,
         (unsigned long)ts.steps, (unsigned long)ts.qualifiedSteps,
@@ -156,7 +158,10 @@ static esp_err_t handle_training_status(httpd_req_t *req)
         CONFIG_TRAIN_ROM_MAX_DEG, CONFIG_TRAIN_ROM_LIMIT_DEG,
         CONFIG_TRAIN_SPEED_MIN_DPS, CONFIG_TRAIN_SPEED_MAX_DPS,
         CONFIG_TRAIN_CYCLE_MIN_MS, CONFIG_TRAIN_CYCLE_MAX_MS,
-        CONFIG_TRAIN_LATERAL_MAX_DEG, CONFIG_TRAIN_RETURN_WINDOW_DEG);
+        CONFIG_TRAIN_LATERAL_MAX_DEG, CONFIG_TRAIN_RETURN_WINDOW_DEG,
+        CONFIG_TRAIN_FALL_ANGLE_DEG, CONFIG_TRAIN_FALL_ANGLE_HOLD_MS,
+        (float)CONFIG_TRAIN_FALL_ACCEL_LOW_MG / 1000.0f,
+        (float)CONFIG_TRAIN_FALL_ACCEL_HIGH_MG / 1000.0f);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_send(req, buf, (len > 0 && len < (int)sizeof(buf)) ? len : HTTPD_RESP_USE_STRLEN);

@@ -466,7 +466,7 @@
     <div class="statusRow"><span>控制器连接</span><b id="myConnection">等待设备</b></div>
     <div class="statusRow"><span>JY61P 姿态传感器</span><b id="myImu">等待数据</b></div>
     <div class="statusRow"><span>当前训练模式</span><b id="myMode">助力训练</b></div>
-    <div class="statusRow"><span>算法版本</span><b id="myAlgorithm">single-leg-mvp-0.2</b></div>
+    <div class="statusRow"><span>算法版本</span><b id="myAlgorithm">single-leg-mvp-0.3</b></div>
   </div>
 </div>
 
@@ -750,7 +750,7 @@ function renderTraining(t){
   document.getElementById("profileShortcutValue").textContent=missingProfile
     ? "请先录入身高，用于估算腿长和行走距离"
     : (t.height_cm.toFixed(1)+" cm · 小腿长 "+shankText+" cm · "+(t.shank_measured?"实测":"身高估算"));
-  document.getElementById("myAlgorithm").textContent=t.algo||"single-leg-mvp-0.2";
+  document.getElementById("myAlgorithm").textContent=t.algo||"single-leg-mvp-0.3";
   if(document.activeElement!==document.getElementById("heightInput")) document.getElementById("heightInput").value=t.height_cm>0?t.height_cm.toFixed(1):"";
   if(document.activeElement!==document.getElementById("shankInput")) document.getElementById("shankInput").value=t.shank_measured?t.shank_cm.toFixed(1):"0";
   const start=document.getElementById("trainStart");
