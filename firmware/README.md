@@ -42,6 +42,8 @@ CH340 端口主要用于 UART0 控制台；USB-Serial-JTAG 端口适合自动复
 
 ## 接线
 
+完整接线、USB/串口固定引脚、电源边界和未定义接口见 [`docs/PINOUT.md`](../docs/PINOUT.md)。
+
 | 信号 | 引脚 |
 |---|---:|
 | ESC 1 / 左方向舵 | GPIO15 |
