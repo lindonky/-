@@ -39,11 +39,16 @@ def main():
     ap.add_argument("--log", help="同时把输出追加保存到该文件")
     args = ap.parse_args()
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.1)
-    # 不要驱动 DTR/RTS：很多板子的 CH340 复位电路接到 EN/GPIO0，
-    # 打开串口时默认拉高 DTR/RTS 会把芯片带进下载模式。
+    # 必须在 open() 之前预设 DTR/RTS。若用 Serial(port, ...) 直接打开，
+    # Windows/pyserial 可能先应用默认控制线，再执行下面的属性赋值；
+    # ESP32-S3 原生 USB 或带自动下载电路的 CH340 会因此进入下载模式。
+    ser = serial.Serial()
+    ser.port = args.port
+    ser.baudrate = args.baud
+    ser.timeout = 0.1
     ser.dtr = False
     ser.rts = False
+    ser.open()
     log_file = open(args.log, "a", encoding="utf-8") if args.log else None
     stop_event = threading.Event()
 
